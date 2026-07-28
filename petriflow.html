@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<title>N. Kyparissas - PetriFlow</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<meta name="description" content="PetriFlow — a dependency-aware task scheduler built on Petri nets. Runs entirely in your browser.">
+
+		<link href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,700,800|Playfair+Display:,300, 400, 700" rel="stylesheet">
+
+		<link rel="stylesheet" href="fonts/fontawesome/css/font-awesome.min.css">
+		<link rel="stylesheet" href="fonts/academicons/css/academicons.min.css">
+
+		<!-- Tool style (self-contained: no Bootstrap, no jQuery) -->
+		<link rel="stylesheet" href="css/petriflow.css">
+
+		<!-- Applies the saved theme before the first paint, so choosing light on a
+		     dark-mode machine does not flash dark on every load. Must stay inline
+		     and in <head>; deferring it to petriflow.js is what causes the flash. -->
+		<script>
+			(function () {
+				try {
+					var t = localStorage.getItem('petriflow:theme');
+					if (t === 'light' || t === 'dark') {
+						document.documentElement.setAttribute('data-theme', t);
+					}
+				} catch (e) { /* private mode / file:// — fall back to the OS setting */ }
+			})();
+		</script>
+
+		<!-- Favicon
+		–––––––––––––––––––––––––––––––––––––––––––––––––– -->
+		<link rel="shortcut icon" href="./img/favicon.ico" type="image/x-icon">
+		<link rel="icon" href="./img/favicon.ico" type="image/x-icon">
+	</head>
+	<body>
+
+		<noscript>
+			<div class="noscript">
+				<h1>This tool needs JavaScript</h1>
+				<p>PetriFlow is an interactive editor, so it cannot work as static markup. It uses no
+				third-party libraries and sends nothing anywhere &mdash; everything runs locally in this tab.</p>
+				<p><a href="index.html">&larr; Back to the site</a></p>
+			</div>
+		</noscript>
+
+		<div class="app" id="app">
+
+			<header class="app-bar">
+				<div class="bar-group bar-project">
+					<a href="index.html" class="home-link" title="Back to the site" aria-label="Back to the site">&#8592;</a>
+					<span class="brand">PetriFlow</span>
+					<label class="sr-only" for="projectName">Project name</label>
+					<input id="projectName" class="project-name" type="text" value="Untitled project"
+					       spellcheck="false" autocomplete="off">
+				</div>
+
+				<div class="bar-group bar-tools" role="toolbar" aria-label="Editor tools">
+					<button type="button" class="btn" id="btnAddTask" title="Add a task (T)">
+						<span class="btn-ico" aria-hidden="true">&#9633;</span> Task
+					</button>
+					<button type="button" class="btn" id="btnAddBarrier" title="Add a barrier (B)">
+						<span class="btn-ico" aria-hidden="true">&#9475;</span> Barrier
+					</button>
+					<button type="button" class="btn btn-toggle" id="btnConnect" aria-pressed="false"
+					        title="Connect: click the source, then the target (C)">
+						<span class="btn-ico" aria-hidden="true">&#8594;</span> Connect
+					</button>
+
+					<span class="bar-sep" aria-hidden="true"></span>
+
+					<button type="button" class="btn" id="btnArrange" title="Auto-arrange the layout (A)">Auto-arrange</button>
+					<button type="button" class="btn" id="btnFit" title="Fit everything on screen (F)">Fit</button>
+
+					<span class="bar-sep" aria-hidden="true"></span>
+
+					<button type="button" class="btn" id="btnSave" title="Download as a .json file (Ctrl+S)">Save</button>
+					<button type="button" class="btn" id="btnLoad" title="Open a previously saved file">Open</button>
+					<button type="button" class="btn" id="btnNew" title="Start an empty project">New</button>
+					<input type="file" id="fileInput" accept=".json,application/json" hidden>
+
+					<span class="bar-sep" aria-hidden="true"></span>
+
+					<button type="button" class="btn btn-icon" id="btnTheme" title="Switch theme" aria-label="Switch theme">
+						<span id="themeIco" aria-hidden="true">&#9728;</span>
+					</button>
+					<button type="button" class="btn btn-icon" id="btnHelp" title="Help" aria-label="Help">?</button>
+				</div>
+
+				<button type="button" class="offcanvas-toggle" id="menuToggle" aria-expanded="false"
+				        aria-controls="offcanvas_menu">Menu</button>
+			</header>
+
+			<div class="workspace">
+				<svg id="canvas" class="canvas" xmlns="http://www.w3.org/2000/svg" tabindex="0"
+				     role="application" aria-label="Petri net editor canvas">
+					<defs>
+						<pattern id="dotGrid" width="26" height="26" patternUnits="userSpaceOnUse">
+							<circle cx="1.5" cy="1.5" r="1.1" class="grid-dot"></circle>
+						</pattern>
+						<marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+						        orient="auto-start-reverse">
+							<path d="M 0 1 L 10 5 L 0 9 z" fill="#898781"></path>
+						</marker>
+						<marker id="arwDone" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+						        orient="auto-start-reverse">
+							<path d="M 0 1 L 10 5 L 0 9 z" fill="#0ca30c"></path>
+						</marker>
+						<marker id="arwSel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+						        orient="auto-start-reverse">
+							<path d="M 0 1 L 10 5 L 0 9 z" fill="#c0392b"></path>
+						</marker>
+					</defs>
+
+					<g id="viewport">
+						<rect id="gridRect" x="-40000" y="-40000" width="80000" height="80000" fill="url(#dotGrid)"></rect>
+						<g id="edgeLayer"></g>
+						<g id="ghostLayer"></g>
+						<g id="nodeLayer"></g>
+					</g>
+				</svg>
+
+				<div class="canvas-hint" id="canvasHint" hidden></div>
+
+				<div class="zoom-controls" role="group" aria-label="Zoom">
+					<button type="button" class="btn btn-icon" id="btnZoomIn" aria-label="Zoom in">+</button>
+					<button type="button" class="btn btn-icon" id="btnZoomOut" aria-label="Zoom out">&#8722;</button>
+					<button type="button" class="btn btn-icon" id="btnZoomReset" aria-label="Reset zoom">100%</button>
+				</div>
+
+				<aside class="inspector" id="inspector" aria-label="Selection details">
+					<div class="inspector-inner" id="inspectorInner"></div>
+				</aside>
+			</div>
+
+			<footer class="status-bar">
+				<span class="status-msg" id="statusMsg">Ready.</span>
+				<button type="button" class="status-problems" id="problemsBtn" hidden></button>
+				<span class="status-credit">100% vibecoded by
+					<a href="index.html">Nick Kyparissas</a></span>
+			</footer>
+
+		</div>
+
+		<div class="scrim" id="scrim" hidden></div>
+
+		<div class="offcanvas_menu" id="offcanvas_menu" aria-hidden="true">
+			<ul class="mb-5">
+				<li><a href="index.html">Home</a></li>
+				<li><a href="publications.html">Publications</a></li>
+				<li><a href="interesting_stuff.html">Interesting Stuff</a></li>
+				<li class="active"><a href="petriflow.html">PetriFlow</a></li>
+			</ul>
+
+			<ul class="social">
+				<li><a href="https://www.linkedin.com/in/nkyparissas" class="fa fa-linkedin-square fa-2x"></a></li>
+				<li><a href="https://scholar.google.gr/citations?user=_pt3YHQAAAAJ" target="_blank" class="ai ai-google-scholar-square ai-2x"></a></li>
+				<li><a href="https://orcid.org/0000-0001-6868-5163" target="_blank" class="ai ai-orcid-square ai-2x"></a></li>
+				<li><a href="https://github.com/nkyparissas" class="fa fa-github-square fa-2x"></a></li>
+			</ul>
+
+			<p class="menu-foot">
+				<b>PetriFlow</b> &mdash; 100% vibecoded<br>
+				by <a href="index.html">Nick Kyparissas</a>
+				<span class="menu-year">&middot; &copy;<script>document.write(new Date().getFullYear());</script></span>
+			</p>
+			<p class="menu-licence">
+				Free to use, change and share &mdash; <b>credit required</b>.<br>
+				<a href="https://creativecommons.org/licenses/by/4.0/"
+				   target="_blank" rel="license noopener">CC&nbsp;BY&nbsp;4.0</a>
+			</p>
+		</div>
+
+		<div class="modal" id="helpModal" hidden>
+			<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+				<button type="button" class="modal-x" id="helpX" aria-label="Close">&#10005;</button>
+				<h2 id="helpTitle">PetriFlow</h2>
+				<p class="modal-sub">Plan work as a Petri net: tasks joined by barriers, so nothing starts
+				before the work it depends on has finished.</p>
+
+				<p class="disclaimer">
+					<b>Experimental tool — use at your own risk.</b>
+					PetriFlow is a personal side project provided as-is, with no warranty of any kind and
+					no responsibility taken for lost, corrupted, or unreadable save files, or for any
+					decision made on the basis of what it shows. Your work lives in this browser's local
+					storage, which <b>can be cleared without warning</b> by the browser, by private-browsing
+					mode, or by clearing site data. Save early, save often, and keep your own backups of
+					anything you care about.
+				</p>
+
+				<h3>Building the net</h3>
+				<ul>
+					<li><b>Task</b> adds a job to be done. A new task is wired straight from
+					<i>Project start</i> to <i>Project complete</i> so it is always valid.</li>
+					<li><b>Barrier</b> adds a synchronisation point on its own. A task may only begin once
+					every task feeding its incoming barrier is complete.</li>
+					<li><b>Connect</b>, then click the source and the target. Joining two tasks directly
+					inserts a barrier between them automatically, because tasks always run barrier&nbsp;&rarr;&nbsp;barrier.</li>
+					<li>Drag nodes to place them by hand, or press <b>Auto-arrange</b> to lay the graph out by
+					dependency depth.</li>
+				</ul>
+
+				<h3>Keyboard</h3>
+				<ul class="keys">
+					<li><kbd>T</kbd> new task</li>
+					<li><kbd>B</kbd> new barrier</li>
+					<li><kbd>C</kbd> connect mode</li>
+					<li><kbd>A</kbd> auto-arrange</li>
+					<li><kbd>F</kbd> fit to screen</li>
+					<li><kbd>Delete</kbd> remove selection</li>
+					<li><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo</li>
+					<li><kbd>Ctrl</kbd>+<kbd>S</kbd> save to file</li>
+					<li><kbd>Esc</kbd> cancel / deselect</li>
+				</ul>
+
+				<h3>Your data</h3>
+				<p>Nothing leaves this tab. The graph is kept in your browser's local storage as you work, and
+				<b>Save</b> downloads it as a plain JSON file you can archive, edit by hand, or reopen later
+				with <b>Open</b>.</p>
+
+				<div class="modal-foot">
+					<button type="button" class="btn btn-primary" id="helpClose">Got it</button>
+					<span class="modal-dismiss-hint">or click outside this box &middot; <kbd>Esc</kbd></span>
+				</div>
+			</div>
+		</div>
+
+		<script src="js/petriflow.js"></script>
+	</body>
+</html>
