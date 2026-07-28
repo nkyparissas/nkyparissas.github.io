@@ -315,6 +315,129 @@
 
 	/* -------------------------------------------------------------- analysis */
 
+	/* ------------------------------------------------------------- scheduling
+	 *
+	 * Critical Path Method over the same graph the dependency rule uses. Dates
+	 * are handled as whole days in UTC: an <input type="date"> yields
+	 * "YYYY-MM-DD", and parsing that as UTC avoids a local timezone shifting a
+	 * date across midnight.
+	 *
+	 * Convention: a task occupies its start and end dates inclusively, so
+	 * 1 Jul -> 3 Jul is three days, and a successor starts the day after its
+	 * predecessor finishes. Barriers take no time and simply pass the date
+	 * through.
+	 */
+
+	var DAY = 86400000;
+	var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+	              'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+	function parseDay(s) {
+		var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ''));
+		if (!m) return null;
+		var t = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+		return isNaN(t) ? null : t;
+	}
+
+	function formatDay(ms) {
+		if (ms === null || ms === undefined || isNaN(ms)) return '—';
+		var d = new Date(ms);
+		return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
+	}
+
+	function taskDuration(n) {
+		var s = parseDay(n.start), e = parseDay(n.end);
+		if (s === null || e === null || e < s) return null;
+		return (e - s) / DAY + 1;                       // inclusive of both ends
+	}
+
+	/* Returns null when the graph has a cycle (dates are meaningless in a loop)
+	   or when no task carries a date at all — in which case the whole schedule
+	   overlay stays switched off rather than inventing numbers. */
+	function computeSchedule(nodes, order, cyclic) {
+		if (cyclic) return null;
+
+		var ids = Object.keys(nodes);
+		var dated = ids.filter(function (id) {
+			return nodes[id].type === 'task' && parseDay(nodes[id].start) !== null;
+		});
+		if (!dated.length) return null;
+
+		var projectStart = Math.min.apply(null, dated.map(function (id) {
+			return parseDay(nodes[id].start);
+		}));
+
+		var dur = {}, undated = [];
+		ids.forEach(function (id) {
+			var n = nodes[id];
+			if (n.type !== 'task') { dur[id] = 0; return; }
+			var d = taskDuration(n);
+			if (d === null) { dur[id] = 0; undated.push(id); }
+			else dur[id] = d;
+		});
+
+		/* Forward pass: earliest start and finish. */
+		var es = {}, ef = {};
+		order.forEach(function (id) {
+			var n = nodes[id];
+			var preds = predsOf(id);
+
+			if (id === ROOT_ID) {
+				/* One day before, so the first real task begins on projectStart. */
+				es[id] = ef[id] = projectStart - DAY;
+				return;
+			}
+			var base = preds.length
+				? Math.max.apply(null, preds.map(function (p) {
+					return ef[p] === undefined ? projectStart - DAY : ef[p];
+				}))
+				: projectStart - DAY;
+
+			if (n.type === 'task') {
+				es[id] = base + DAY;
+				ef[id] = es[id] + Math.max(0, dur[id] - 1) * DAY;
+			} else {
+				es[id] = ef[id] = base;                 // barriers take no time
+			}
+		});
+
+		var projectFinish = ef[END_ID];
+		ids.forEach(function (id) {
+			if (ef[id] !== undefined && (projectFinish === undefined || ef[id] > projectFinish)) {
+				projectFinish = ef[id];
+			}
+		});
+
+		/* Backward pass: latest finish and start, mirroring the forward rules. */
+		var lf = {}, ls = {};
+		order.slice().reverse().forEach(function (id) {
+			var n = nodes[id];
+			var succs = succsOf(id);
+			lf[id] = succs.length
+				? Math.min.apply(null, succs.map(function (s) {
+					if (ls[s] === undefined) return projectFinish;
+					return nodes[s] && nodes[s].type === 'task' ? ls[s] - DAY : ls[s];
+				}))
+				: projectFinish;
+			ls[id] = n.type === 'task' ? lf[id] - Math.max(0, dur[id] - 1) * DAY : lf[id];
+		});
+
+		var slack = {}, critical = {};
+		ids.forEach(function (id) {
+			if (es[id] === undefined || ls[id] === undefined) return;
+			slack[id] = Math.round((ls[id] - es[id]) / DAY);
+			critical[id] = slack[id] <= 0;
+		});
+
+		return {
+			projectStart: projectStart,
+			projectFinish: projectFinish,
+			es: es, ef: ef, ls: ls, lf: lf,
+			slack: slack, critical: critical,
+			dur: dur, undated: undated
+		};
+	}
+
 	function analyse() {
 		var nodes = model.nodes;
 		var ids = Object.keys(nodes);
@@ -371,6 +494,8 @@
 			ids.forEach(function (id) { if (!placed[id]) { inCycle[id] = true; layer[id] = layer[id] || 0; } });
 		}
 
+		var schedule = computeSchedule(nodes, order, cyclic);
+
 		/* Reachability, so we can flag anything stranded off the main flow. */
 		var fromRoot = reach(ROOT_ID, succsOf);
 		var toEnd = reach(END_ID, predsOf);
@@ -414,11 +539,27 @@
 			if (n.start && n.end && n.start > n.end) {
 				problems.push({ severity: 'warn', msg: labelOf(n) + ' ends before it starts.', nodeId: id });
 			}
+
+			/* The plan contradicts the graph: this task is booked to begin before
+			   the work it depends on can possibly be finished. */
+			if (schedule) {
+				var declared = parseDay(n.start);
+				if (declared !== null && schedule.es[id] !== undefined && declared < schedule.es[id]) {
+					problems.push({
+						severity: 'error',
+						msg: labelOf(n) + ' is set to start ' + formatDay(declared) +
+						     ', but its dependencies cannot finish before ' +
+						     formatDay(schedule.es[id] - DAY) + '.',
+						nodeId: id
+					});
+				}
+			}
 		});
 
 		return {
 			satisfied: sat, ready: ready, layer: layer, inCycle: inCycle,
-			cyclic: cyclic, problems: problems, fromRoot: fromRoot, toEnd: toEnd
+			cyclic: cyclic, problems: problems, fromRoot: fromRoot, toEnd: toEnd,
+			schedule: schedule
 		};
 	}
 
@@ -512,6 +653,10 @@
 			var cls = 'edge';
 			if (e.auto) cls += ' is-auto';
 			if (analysis.satisfied[e.from]) cls += ' is-satisfied';
+			if (analysis.schedule &&
+				analysis.schedule.critical[e.from] && analysis.schedule.critical[e.to]) {
+				cls += ' is-critical';
+			}
 			if (isSelected('edge', e.id)) cls += ' is-selected';
 
 			var path = el('path', { d: d, 'class': cls }, g);
@@ -749,6 +894,7 @@
 		if (connectFrom === n.id) cls += ' is-connect-source';
 		if (analysis.inCycle[n.id]) cls += ' is-cycle';
 		if (n.type === 'task' && !analysis.ready[n.id] && n.state !== 'completed') cls += ' is-gated';
+		if (analysis.schedule && analysis.schedule.critical[n.id]) cls += ' is-critical';
 		return cls;
 	}
 
@@ -860,6 +1006,11 @@
 
 		var bits = [tasks.length + (tasks.length === 1 ? ' task' : ' tasks'), done + ' complete'];
 		if (readyNow) bits.push(readyNow + ' ready to start');
+		var sch = analysis.schedule;
+		if (sch && sch.projectFinish !== undefined) {
+			bits.push('finishes ' + formatDay(sch.projectFinish) +
+			          (sch.undated.length ? ' at the earliest' : ''));
+		}
 		/* A held notice outranks the routine counts. Any later render would
 		   otherwise wipe it, and this writes to the bar without going through
 		   flash(), so the guard has to be here too. */
@@ -1327,8 +1478,15 @@
 		html('label', { text: 'End', 'for': 'f-end' }, f4);
 		var end = html('input', { type: 'date', id: 'f-end', value: n.end || '' }, f4);
 
-		start.addEventListener('change', function () { n.start = start.value; render(); persist(); });
-		end.addEventListener('change', function () { n.end = end.value; render(); persist(); });
+		/* A date change moves the whole schedule, so the panel is rebuilt too. */
+		start.addEventListener('change', function () {
+			n.start = start.value; render(); renderInspector(); persist();
+		});
+		end.addEventListener('change', function () {
+			n.end = end.value; render(); renderInspector(); persist();
+		});
+
+		renderScheduleBlock(n);
 
 		/* colour */
 		var f5 = html('div', { 'class': 'field' }, inspectorInner);
@@ -1402,6 +1560,54 @@
 		var actions = html('div', { 'class': 'inspector-actions' }, inspectorInner);
 		var del = html('button', { type: 'button', 'class': 'btn btn-danger', text: 'Delete task' }, actions);
 		del.addEventListener('click', function () { doDelete(n.id); });
+	}
+
+	/* Everything the Critical Path pass worked out about one task. Only shown
+	   once some task in the graph carries a date — with none, there is nothing
+	   to compute and an empty panel would just be noise. */
+	function renderScheduleBlock(n) {
+		var s = analysis.schedule;
+		if (!s) return;
+
+		var box = html('div', { 'class': 'schedule' }, inspectorInner);
+		html('span', { 'class': 'field-label', text: 'Schedule' }, box);
+
+		var dl = html('dl', { 'class': 'schedule-rows' }, box);
+		var row = function (label, value, cls) {
+			html('dt', { text: label }, dl);
+			html('dd', { text: value, 'class': cls || null }, dl);
+		};
+
+		var d = s.dur[n.id];
+		row('Duration', d ? d + (d === 1 ? ' day' : ' days') : 'no dates set');
+		row('Earliest start', formatDay(s.es[n.id]));
+		row('Earliest finish', formatDay(s.ef[n.id]));
+
+		var slack = s.slack[n.id];
+		if (slack === undefined) {
+			row('Slack', '—');
+		} else if (slack <= 0) {
+			row('Slack', 'none — on the critical path', 'is-critical-note');
+		} else {
+			row('Slack', slack + (slack === 1 ? ' day' : ' days'));
+		}
+
+		var declared = parseDay(n.start);
+		if (declared !== null && s.es[n.id] !== undefined && declared < s.es[n.id]) {
+			html('div', {
+				'class': 'gate-note',
+				html: 'The planned start of <b>' + escapeHtml(formatDay(declared)) +
+				      '</b> is earlier than the dependencies allow. The earliest ' +
+				      'possible start is <b>' + escapeHtml(formatDay(s.es[n.id])) + '</b>.'
+			}, box);
+		} else if (declared !== null && s.es[n.id] !== undefined && declared > s.es[n.id]) {
+			var wait = Math.round((declared - s.es[n.id]) / DAY);
+			html('p', {
+				'class': 'schedule-note',
+				text: 'Planned to start ' + wait + (wait === 1 ? ' day' : ' days') +
+				      ' later than it could.'
+			}, box);
+		}
 	}
 
 	function relationList(n) {

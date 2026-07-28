@@ -919,3 +919,44 @@ kbd {
 .state-opt.state-bulk:hover:not(.is-disabled) { background: var(--surface); border-color: var(--line); }
 .state-opt.state-bulk:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .state-opt.state-bulk.is-disabled { cursor: not-allowed; }
+
+/* ------------------------------------------------------ schedule / CPM */
+
+/* Critical path is carried by line weight, not colour: colour is already fully
+   committed to task state, and adding a sixth hue would collide with it. */
+.edge.is-critical { stroke-width: 4; opacity: 1; }
+.node.is-critical .node-box,
+.node.is-critical .barrier-bar { stroke-width: 3.5; }
+
+.schedule {
+	margin: .25rem 0 .85rem;
+	padding-top: .75rem;
+	border-top: 1px solid var(--line);
+}
+
+.schedule-rows {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: .15rem .75rem;
+	margin: .35rem 0 0;
+	font-size: 12.5px;
+}
+.schedule-rows dt {
+	color: var(--muted);
+	font-size: 11px;
+	letter-spacing: .06em;
+	text-transform: uppercase;
+	align-self: center;
+}
+.schedule-rows dd {
+	margin: 0;
+	color: var(--ink);
+	font-variant-numeric: tabular-nums;
+}
+.schedule-rows dd.is-critical-note { color: var(--accent); font-weight: 600; }
+
+.schedule-note {
+	font-size: 12px;
+	color: var(--ink-2);
+	margin: .6rem 0 0;
+}
