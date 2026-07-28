@@ -142,6 +142,7 @@
 					<span class="bar-sep" aria-hidden="true"></span>
 
 					<button type="button" class="btn" id="btnSave" title="Download as a .json file (Ctrl+S)">Save</button>
+					<button type="button" class="btn" id="btnExport" title="Export a high-resolution PNG image (E)">PNG</button>
 					<button type="button" class="btn" id="btnLoad" title="Open a previously saved file">Open</button>
 					<button type="button" class="btn" id="btnNew" title="Start an empty project">New</button>
 					<input type="file" id="fileInput" accept=".json,application/json" hidden>
@@ -274,6 +275,7 @@
 					<li><kbd>C</kbd> connect mode</li>
 					<li><kbd>A</kbd> auto-arrange</li>
 					<li><kbd>F</kbd> fit to screen</li>
+					<li><kbd>E</kbd> export a PNG</li>
 					<li><kbd>Delete</kbd> remove selection</li>
 					<li><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo</li>
 					<li><kbd>Ctrl</kbd>+<kbd>S</kbd> save to file</li>
@@ -284,6 +286,11 @@
 				<p>Nothing leaves this tab. The graph is kept in your browser's local storage as you work, and
 				<b>Save</b> downloads it as a plain JSON file you can archive, edit by hand, or reopen later
 				with <b>Open</b>.</p>
+
+				<h3>Exporting a picture</h3>
+				<p><b>PNG</b> writes out a 12-megapixel image framed exactly as <b>Fit</b> would show it,
+				in whichever theme you are currently using. The grid and any selection highlight are left
+				out, so the result drops straight into a document or slide.</p>
 
 				<div class="modal-foot">
 					<button type="button" class="btn btn-primary" id="helpClose">Got it</button>

@@ -83,6 +83,12 @@
 	var MIN_K = 0.2, MAX_K = 2.6;
 	var MAX_FIT = 1;                   /* ceiling for fit-to-view only */
 
+	/* PNG export. The target is an area, not a width, so the aspect ratio of
+	   whatever you drew is preserved. MAX_SIDE stays well inside the canvas
+	   limits browsers enforce (Safari caps a side at 16384). */
+	var EXPORT_PIXELS = 12e6;
+	var EXPORT_MAX_SIDE = 10000;
+
 	/* ------------------------------------------------------------------ state */
 
 	var model = emptyModel();
@@ -1107,22 +1113,186 @@
 		redoStack = [];
 	}
 
-	function saveToFile() {
-		var data = serialize();
-		var json = JSON.stringify(data, null, 2);
-		var blob = new Blob([json], { type: 'application/json' });
+	function downloadBlob(blob, filename) {
 		var url = URL.createObjectURL(blob);
-
 		var a = document.createElement('a');
 		a.href = url;
-		a.download = slug(model.project) + '.json';
+		a.download = filename;
 		document.body.appendChild(a);
 		a.click();
 		document.body.removeChild(a);
 		/* Give the browser a moment to start the download before revoking. */
 		setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+	}
 
-		flash('Saved as ' + a.download);
+	function saveToFile() {
+		var json = JSON.stringify(serialize(), null, 2);
+		var name = slug(model.project) + '.json';
+		downloadBlob(new Blob([json], { type: 'application/json' }), name);
+		flash('Saved as ' + name);
+	}
+
+	/* ----------------------------------------------------------- PNG export */
+
+	/* Properties that actually carry the look. Copied from the live element's
+	   computed style onto the clone, because a serialised SVG loaded as an
+	   <img> has no access to this page's stylesheet — every class-based rule
+	   would otherwise be dropped and the export would come out unstyled. */
+	var EXPORT_PROPS = [
+		'fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-dasharray',
+		'stroke-linejoin', 'stroke-linecap', 'stroke-opacity', 'opacity',
+		'paint-order', 'font-family', 'font-size', 'font-weight',
+		'letter-spacing', 'text-anchor'
+	];
+
+	function inlineComputedStyles(src, dst) {
+		var cs = window.getComputedStyle(src);
+		var decl = '';
+		EXPORT_PROPS.forEach(function (p) {
+			var v = cs.getPropertyValue(p);
+			if (v) decl += p + ':' + v + ';';
+		});
+		if (decl) dst.setAttribute('style', decl);
+
+		var s = src.children, d = dst.children;
+		for (var i = 0; i < s.length && i < d.length; i++) inlineComputedStyles(s[i], d[i]);
+	}
+
+	function exportBackground() {
+		return window.getComputedStyle(svg).backgroundColor || '#ffffff';
+	}
+
+	function buildExportSVG(box, outW, outH, bg) {
+		/* Selection is editor state, not part of the drawing. Lift the classes
+		   for the duration of the clone so highlights are not baked in, then put
+		   them straight back — this is synchronous, so nothing flickers. */
+		var marked = Array.prototype.slice.call(
+			svg.querySelectorAll('.is-selected, .is-connect-source'));
+		marked.forEach(function (el) {
+			el.classList.remove('is-selected', 'is-connect-source');
+		});
+
+		var clone, styleSrc = ['#edgeLayer', '#nodeLayer'];
+		try {
+			clone = svg.cloneNode(true);
+			/* Inline only the drawn layers. Elements inside <defs> are never
+			   rendered, so their computed style is meaningless and would
+			   override the marker fills set as attributes. */
+			styleSrc.forEach(function (sel) {
+				var a = svg.querySelector(sel), b = clone.querySelector(sel);
+				if (a && b) inlineComputedStyles(a, b);
+			});
+		} finally {
+			marked.forEach(function (el) { el.classList.add('is-selected'); });
+		}
+
+		/* Strip everything that only exists for interaction. */
+		['#gridRect', '#ghostLayer'].forEach(function (sel) {
+			var el = clone.querySelector(sel);
+			if (el && el.parentNode) el.parentNode.removeChild(el);
+		});
+		Array.prototype.slice.call(clone.querySelectorAll('.edge-hit'))
+			.forEach(function (el) { if (el.parentNode) el.parentNode.removeChild(el); });
+
+		/* The live transform is pan/zoom state; the export frames itself. */
+		var vp = clone.querySelector('#viewport');
+		if (vp) vp.removeAttribute('transform');
+
+		clone.setAttribute('xmlns', SVGNS);
+		clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+		clone.setAttribute('width', outW);
+		clone.setAttribute('height', outH);
+		clone.setAttribute('viewBox', box.x + ' ' + box.y + ' ' + box.w + ' ' + box.h);
+		clone.removeAttribute('id');
+		clone.removeAttribute('class');
+		clone.removeAttribute('tabindex');
+
+		/* The page background is CSS on the <svg>; a serialised copy has none,
+		   so paint it explicitly or the PNG comes out transparent. Overhang the
+		   viewBox slightly: an edge landing on a fractional device pixel leaves
+		   the outermost row semi-transparent, which shows as a halo when the
+		   image is dropped on a dark background. */
+		var over = Math.max(box.w, box.h) * 0.01 + 2;
+		var rect = document.createElementNS(SVGNS, 'rect');
+		rect.setAttribute('x', box.x - over);
+		rect.setAttribute('y', box.y - over);
+		rect.setAttribute('width', box.w + over * 2);
+		rect.setAttribute('height', box.h + over * 2);
+		rect.setAttribute('fill', bg);
+		var defs = clone.querySelector('defs');
+		clone.insertBefore(rect, defs ? defs.nextSibling : clone.firstChild);
+
+		return new XMLSerializer().serializeToString(clone);
+	}
+
+	function exportPNG() {
+		var b = contentBounds();
+		if (!b) { flash('Nothing to export.'); return; }
+
+		/* Same framing as Fit, in graph units rather than screen pixels. */
+		var pad = 40;
+		var box = {
+			x: b.minX - pad,
+			y: b.minY - pad,
+			w: Math.max(1, b.maxX - b.minX) + pad * 2,
+			h: Math.max(1, b.maxY - b.minY) + pad * 2
+		};
+
+		/* Hold the aspect ratio and scale until the area hits the target, then
+		   pull back if a side would exceed what canvas can allocate. */
+		var scale = Math.sqrt(EXPORT_PIXELS / (box.w * box.h));
+		var outW = Math.round(box.w * scale), outH = Math.round(box.h * scale);
+		if (outW > EXPORT_MAX_SIDE || outH > EXPORT_MAX_SIDE) {
+			scale *= Math.min(EXPORT_MAX_SIDE / outW, EXPORT_MAX_SIDE / outH);
+			outW = Math.round(box.w * scale);
+			outH = Math.round(box.h * scale);
+		}
+
+		var mp = (outW * outH / 1e6).toFixed(1);
+		flash('Rendering ' + outW + '×' + outH + ' (' + mp + ' MP)…');
+
+		var bg = exportBackground();
+		var svgText;
+		try {
+			svgText = buildExportSVG(box, outW, outH, bg);
+		} catch (err) {
+			flash('Export failed while reading the diagram.');
+			return;
+		}
+
+		var url = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' }));
+		var img = new Image();
+
+		img.onload = function () {
+			var canvas = document.createElement('canvas');
+			canvas.width = outW;
+			canvas.height = outH;
+			var ctx = canvas.getContext('2d');
+			if (!ctx) { URL.revokeObjectURL(url); flash('Export failed: no canvas context.'); return; }
+
+			/* Paint the backdrop on the canvas too, so every pixel is fully
+			   opaque regardless of how the SVG edges land. */
+			ctx.fillStyle = bg;
+			ctx.fillRect(0, 0, outW, outH);
+			ctx.drawImage(img, 0, 0, outW, outH);
+			URL.revokeObjectURL(url);
+
+			var finish = function (png) {
+				if (!png) { flash('Export failed while encoding the PNG.'); return; }
+				var name = slug(model.project) + '.png';
+				downloadBlob(png, name);
+				flash('Exported ' + name + ' — ' + outW + '×' + outH + ', ' + mp + ' MP');
+			};
+			if (canvas.toBlob) canvas.toBlob(finish, 'image/png');
+			else finish(null);
+		};
+
+		img.onerror = function () {
+			URL.revokeObjectURL(url);
+			flash('Export failed while rasterising.');
+		};
+
+		img.src = url;
 	}
 
 	function slug(s) {
@@ -1631,6 +1801,7 @@
 		$('btnArrange').addEventListener('click', autoArrange);
 		$('btnFit').addEventListener('click', fitToView);
 		$('btnSave').addEventListener('click', saveToFile);
+		$('btnExport').addEventListener('click', exportPNG);
 		$('btnNew').addEventListener('click', newProject);
 		$('btnHelp').addEventListener('click', function () { setHelp(true); });
 		$('helpClose').addEventListener('click', function () { setHelp(false); });
@@ -1758,6 +1929,7 @@
 			case 'c': setConnectMode(!connectMode); break;
 			case 'a': autoArrange(); break;
 			case 'f': fitToView(); break;
+			case 'e': exportPNG(); break;
 			default: break;
 		}
 	}
