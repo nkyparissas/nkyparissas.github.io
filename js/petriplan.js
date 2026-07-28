@@ -99,7 +99,9 @@
 	var model = emptyModel();
 	var view = { x: 0, y: 0, k: 1 };
 
-	var selection = null;              // { kind: 'node'|'edge', id: string }
+	/* { kind: 'node'|'edge', ids: [...] }. An edge selection always holds exactly
+	   one id; node selections may hold many. */
+	var selection = null;
 	var connectMode = false;
 	var connectFrom = null;            // node id
 	var analysis = null;               // recomputed on every render
@@ -231,6 +233,14 @@
 			if (predsOf(n.id).length === 0) addEdge(ROOT_ID, n.id, true);
 			if (succsOf(n.id).length === 0) addEdge(n.id, END_ID, true);
 		});
+
+		/* With nothing in between, the two fixed barriers still have to form a
+		   path or an empty project reports itself as broken. The placeholder is
+		   withdrawn as soon as there is real content to route through. */
+		var hasContent = allNodes().some(function (n) { return !n.fixed; });
+		var direct = edgeBetween(ROOT_ID, END_ID);
+		if (!hasContent && !direct) addEdge(ROOT_ID, END_ID, true);
+		else if (hasContent && direct && direct.auto) removeEdge(direct.id);
 	}
 
 	function createTask(x, y) {
@@ -248,6 +258,7 @@
 		model.nodes[n.id] = n;
 		addEdge(ROOT_ID, n.id, true);
 		addEdge(n.id, END_ID, true);
+		reattachDangling();
 		return n;
 	}
 
@@ -500,7 +511,7 @@
 			var cls = 'edge';
 			if (e.auto) cls += ' is-auto';
 			if (analysis.satisfied[e.from]) cls += ' is-satisfied';
-			if (selection && selection.kind === 'edge' && selection.id === e.id) cls += ' is-selected';
+			if (isSelected('edge', e.id)) cls += ' is-selected';
 
 			var path = el('path', { d: d, 'class': cls }, g);
 			edgeEls[e.id] = { path: path, hit: hit };
@@ -526,7 +537,7 @@
 
 	function nodeClasses(n) {
 		var cls = 'node node-' + n.type;
-		if (selection && selection.kind === 'node' && selection.id === n.id) cls += ' is-selected';
+		if (isSelected('node', n.id)) cls += ' is-selected';
 		if (connectFrom === n.id) cls += ' is-connect-source';
 		if (analysis.inCycle[n.id]) cls += ' is-cycle';
 		if (n.type === 'task' && !analysis.ready[n.id] && n.state !== 'completed') cls += ' is-gated';
@@ -835,10 +846,32 @@
 
 	/* ------------------------------------------------------------- inspector */
 
-	function select(kind, id) {
-		selection = (kind && id) ? { kind: kind, id: id } : null;
+	function selectedIds() { return selection ? selection.ids : []; }
+
+	function isSelected(kind, id) {
+		return !!selection && selection.kind === kind && selection.ids.indexOf(id) >= 0;
+	}
+
+	function selectedNodes() {
+		if (!selection || selection.kind !== 'node') return [];
+		return selection.ids.map(function (id) { return model.nodes[id]; }).filter(Boolean);
+	}
+
+	/* `ids` may be a single id or an array; falsy clears the selection. */
+	function select(kind, ids) {
+		var list = ids == null ? [] : (Array.isArray(ids) ? ids.slice() : [ids]);
+		selection = (kind && list.length) ? { kind: kind, ids: list } : null;
 		render();
 		renderInspector();
+	}
+
+	/* Shift-click behaviour: add a node, or remove it if already in the set. */
+	function toggleInSelection(id) {
+		if (!selection || selection.kind !== 'node') return select('node', id);
+		var at = selection.ids.indexOf(id);
+		var list = selection.ids.slice();
+		if (at >= 0) list.splice(at, 1); else list.push(id);
+		return select('node', list);
 	}
 
 	function isSheet() { return window.matchMedia('(max-width: 820px)').matches; }
@@ -862,14 +895,133 @@
 		inspector.classList.remove('is-empty');
 
 		if (selection.kind === 'edge') return renderEdgeInspector();
+		if (selection.ids.length > 1) return renderMultiInspector();
 
-		var n = model.nodes[selection.id];
+		var n = model.nodes[selection.ids[0]];
 		if (!n) { selection = null; return renderInspector(); }
 		return n.type === 'task' ? renderTaskInspector(n) : renderBarrierInspector(n);
 	}
 
+	/* Shown when more than one node is selected. Only fields that are meaningful
+	   to set on many nodes at once appear: label, description and dates are
+	   per-task by nature and are deliberately left out. */
+	function renderMultiInspector() {
+		var nodes = selectedNodes();
+		var tasks = nodes.filter(function (n) { return n.type === 'task'; });
+		var barriers = nodes.filter(function (n) { return n.type === 'barrier'; });
+		var fixed = nodes.filter(function (n) { return n.fixed; });
+
+		var parts = [];
+		if (tasks.length) parts.push(tasks.length + (tasks.length === 1 ? ' task' : ' tasks'));
+		if (barriers.length) parts.push(barriers.length + (barriers.length === 1 ? ' barrier' : ' barriers'));
+
+		html('div', { 'class': 'node-kind', text: nodes.length + ' selected' }, inspectorInner);
+		html('p', { 'class': 'multi-summary', text: parts.join(' · ') }, inspectorInner);
+
+		if (!tasks.length) {
+			html('p', {
+				'class': 'empty-note',
+				text: 'Barriers carry only a label, so there is nothing to set in bulk. Drag to move them together.'
+			}, inspectorInner);
+		}
+
+		/* Current spread of states, so it is clear what is about to be overwritten. */
+		if (tasks.length) {
+			var counts = {};
+			tasks.forEach(function (n) { counts[n.state] = (counts[n.state] || 0) + 1; });
+			var chips = html('div', { 'class': 'state-tally' }, inspectorInner);
+			STATES.forEach(function (st) {
+				if (!counts[st.key]) return;
+				var chip = html('span', { 'class': 'tally-chip' }, chips);
+				chip.style.background = st.color;
+				chip.style.color = st.ink;
+				chip.textContent = st.glyph + ' ' + counts[st.key] + ' ' + st.label;
+			});
+		}
+
+		/* Bulk colour */
+		if (tasks.length) {
+			var fc = html('div', { 'class': 'field' }, inspectorInner);
+			html('span', { 'class': 'field-label', text: 'Set colour for all' }, fc);
+			var sw = html('div', { 'class': 'swatches' }, fc);
+			SWATCHES.forEach(function (hex) {
+				var b = html('button', {
+					type: 'button', 'class': 'swatch', title: hex, 'aria-label': 'Colour ' + hex
+				}, sw);
+				b.style.background = hex;
+				b.addEventListener('click', function () {
+					pushUndo();
+					tasks.forEach(function (n) { n.color = hex; });
+					render();
+					renderInspector();
+					persist();
+					flash('Colour applied to ' + tasks.length + ' tasks.');
+				});
+			});
+
+			/* Bulk state. A state is offered only if it is legal for EVERY selected
+			   task, otherwise applying it would demote some of them straight back. */
+			var allReady = tasks.every(function (n) { return analysis.ready[n.id]; });
+			var notReady = tasks.filter(function (n) { return !analysis.ready[n.id]; });
+
+			var fs = html('div', { 'class': 'field' }, inspectorInner);
+			html('span', { 'class': 'field-label', text: 'Set state for all' }, fs);
+			var states = html('div', { 'class': 'states' }, fs);
+
+			STATES.forEach(function (st) {
+				var locked = !allReady && !!GATED_STATES[st.key];
+				var b = html('button', {
+					type: 'button',
+					'class': 'state-opt state-bulk' + (locked ? ' is-disabled' : '')
+				}, states);
+				if (locked) {
+					b.disabled = true;
+					b.title = notReady.length + ' of the selected tasks are not unblocked yet.';
+				}
+				var dot = html('span', { 'class': 'dot', text: st.glyph }, b);
+				dot.style.background = st.color;
+				dot.style.color = st.ink;
+				html('span', { text: st.label }, b);
+
+				b.addEventListener('click', function () {
+					if (locked) return;
+					pushUndo();
+					tasks.forEach(function (n) { n.state = st.key; });
+					render();
+					renderInspector();
+					persist();
+					flash('Set ' + tasks.length + ' tasks to ' + st.label + '.');
+				});
+			});
+
+			if (!allReady) {
+				html('div', {
+					'class': 'gate-note',
+					html: '<b>' + notReady.length + '</b> of these are still waiting on upstream work, ' +
+					      'so the started states cannot be applied to the whole set.'
+				}, inspectorInner);
+			}
+		}
+
+		var actions = html('div', { 'class': 'inspector-actions' }, inspectorInner);
+		var removable = nodes.length - fixed.length;
+		var del = html('button', {
+			type: 'button', 'class': 'btn btn-danger',
+			text: removable ? 'Delete ' + removable + ' node' + (removable === 1 ? '' : 's') : 'Nothing to delete'
+		}, actions);
+		if (!removable) del.disabled = true;
+		else del.addEventListener('click', function () { doDelete(selectedIds()); });
+
+		if (fixed.length) {
+			html('p', {
+				'class': 'empty-note',
+				text: 'Project start and Project complete are part of the selection but cannot be deleted.'
+			}, inspectorInner);
+		}
+	}
+
 	function renderEdgeInspector() {
-		var e = model.edges[selection.id];
+		var e = model.edges[selection.ids[0]];
 		if (!e) { selection = null; return renderInspector(); }
 		var a = model.nodes[e.from], b = model.nodes[e.to];
 
@@ -1050,16 +1202,29 @@
 		});
 	}
 
-	function doDelete(id) {
-		var n = model.nodes[id];
-		if (!n || n.fixed) { flash('Project start and Project complete cannot be deleted.'); return; }
+	function doDelete(ids) {
+		var list = Array.isArray(ids) ? ids : [ids];
+		var removable = list.filter(function (id) {
+			var n = model.nodes[id];
+			return n && !n.fixed;
+		});
+		var kept = list.length - removable.length;
+
+		if (!removable.length) {
+			flash('Project start and Project complete cannot be deleted.');
+			return;
+		}
+
 		pushUndo();
-		deleteNode(id);
+		removable.forEach(deleteNode);
 		selection = null;
 		render();
 		renderInspector();
 		persist();
-		flash('Deleted.');
+		flash(removable.length === 1
+			? 'Deleted.'
+			: 'Deleted ' + removable.length + ' nodes.' +
+			  (kept ? ' Project start and Project complete were kept.' : ''));
 	}
 
 	/* ----------------------------------------------------------- persistence */
@@ -1443,9 +1608,10 @@
 
 	var pointers = {};          // pointerId -> {x, y}
 	var pointerCount = 0;
-	var drag = null;            // { id, dx, dy, moved }
+	var drag = null;            // { ids, offs, clicked, moved }
 	var pan = null;             // { sx, sy, vx, vy, moved }
 	var pinch = null;           // { dist, k, cx, cy }
+	var marquee = null;         // { x0, y0, x1, y1, sx, sy, moved, additive } world coords
 
 	function nodeIdFromEvent(evt) {
 		var t = evt.target;
@@ -1466,9 +1632,12 @@
 		pointers = {};
 		pointerCount = 0;
 		pinch = null;
+		if (marquee) { marquee = null; svg.classList.remove('is-marqueeing'); clear(ghostLayer); }
 		if (drag) {
-			var g = nodeEls[drag.id];
-			if (g) g.classList.remove('is-dragging');
+			drag.ids.forEach(function (id) {
+				var g = nodeEls[id];
+				if (g) g.classList.remove('is-dragging');
+			});
 			drag = null;
 		}
 		if (pan) {
@@ -1477,8 +1646,33 @@
 		}
 	}
 
+	function nodesInRect(r) {
+		var x0 = Math.min(r.x0, r.x1), x1 = Math.max(r.x0, r.x1);
+		var y0 = Math.min(r.y0, r.y1), y1 = Math.max(r.y0, r.y1);
+		/* Intersection, not containment: catching a node by clipping its corner
+		   is far less fiddly than having to lasso it whole. */
+		return allNodes().filter(function (n) {
+			return n.x < x1 && n.x + nodeW(n) > x0 &&
+			       n.y < y1 && n.y + nodeH(n) > y0;
+		}).map(function (n) { return n.id; });
+	}
+
+	function drawMarquee() {
+		clear(ghostLayer);
+		if (!marquee) return;
+		el('rect', {
+			'class': 'marquee',
+			x: Math.min(marquee.x0, marquee.x1),
+			y: Math.min(marquee.y0, marquee.y1),
+			width: Math.abs(marquee.x1 - marquee.x0),
+			height: Math.abs(marquee.y1 - marquee.y0),
+			'vector-effect': 'non-scaling-stroke'
+		}, ghostLayer);
+	}
+
 	function onPointerDown(evt) {
-		if (evt.button !== undefined && evt.button !== 0 && evt.pointerType === 'mouse') return;
+		/* Middle button is allowed through so it can pan; other buttons are not. */
+		if (evt.pointerType === 'mouse' && evt.button !== 0 && evt.button !== 1) return;
 
 		/* A primary pointer means a brand new gesture is starting, so anything
 		   still in the map is a pointerup we never heard about — released off
@@ -1492,6 +1686,7 @@
 
 		if (pointerCount === 2) {
 			drag = null; pan = null;
+			if (marquee) { marquee = null; svg.classList.remove('is-marqueeing'); clear(ghostLayer); }
 			var ids = Object.keys(pointers);
 			var p1 = pointers[ids[0]], p2 = pointers[ids[1]];
 			var rect = svg.getBoundingClientRect();
@@ -1518,11 +1713,23 @@
 		}
 
 		if (nodeId) {
-			var n = model.nodes[nodeId];
+			if (evt.shiftKey) { toggleInSelection(nodeId); return; }
+
+			/* Grabbing a node that is already part of a multi-selection drags the
+			   whole set; grabbing anything else drags just that node. */
+			var group = isSelected('node', nodeId) ? selectedIds().slice() : [nodeId];
 			var w = screenToWorld(localPoint(evt).x, localPoint(evt).y);
-			drag = { id: nodeId, dx: w.x - n.x, dy: w.y - n.y, moved: false };
-			var g = nodeEls[nodeId];
-			if (g) g.classList.add('is-dragging');
+			var offs = {};
+			group.forEach(function (id) {
+				var nd = model.nodes[id];
+				if (nd) offs[id] = { dx: w.x - nd.x, dy: w.y - nd.y };
+			});
+			group = Object.keys(offs);
+			drag = { ids: group, offs: offs, clicked: nodeId, moved: false };
+			group.forEach(function (id) {
+				var g = nodeEls[id];
+				if (g) g.classList.add('is-dragging');
+			});
 			return;
 		}
 
@@ -1530,8 +1737,24 @@
 		if (edgeId) { select('edge', edgeId); return; }
 
 		var lp = localPoint(evt);
-		pan = { sx: lp.x, sy: lp.y, vx: view.x, vy: view.y, moved: false };
-		svg.classList.add('is-panning');
+
+		/* Empty canvas. A mouse rubber-band selects; Shift or the middle button
+		   pans instead. Touch always pans, because there is no Shift on a phone
+		   and one-finger panning is the expected gesture. */
+		var wantsPan = evt.pointerType !== 'mouse' || evt.shiftKey || evt.button === 1;
+		if (wantsPan) {
+			pan = { sx: lp.x, sy: lp.y, vx: view.x, vy: view.y, moved: false };
+			svg.classList.add('is-panning');
+			return;
+		}
+
+		var wp = screenToWorld(lp.x, lp.y);
+		marquee = {
+			x0: wp.x, y0: wp.y, x1: wp.x, y1: wp.y,
+			sx: lp.x, sy: lp.y, moved: false,
+			additive: evt.ctrlKey || evt.metaKey
+		};
+		svg.classList.add('is-marqueeing');
 	}
 
 	function onPointerMove(evt) {
@@ -1552,18 +1775,39 @@
 			return;
 		}
 
+		if (marquee) {
+			var mp = localPoint(evt);
+			if (Math.abs(mp.x - marquee.sx) > 3 || Math.abs(mp.y - marquee.sy) > 3) marquee.moved = true;
+			var mw = screenToWorld(mp.x, mp.y);
+			marquee.x1 = mw.x;
+			marquee.y1 = mw.y;
+			drawMarquee();
+			return;
+		}
+
 		if (drag) {
 			var w = screenToWorld(localPoint(evt).x, localPoint(evt).y);
-			var n = model.nodes[drag.id];
-			if (!n) return;
-			var nx = Math.round(w.x - drag.dx), ny = Math.round(w.y - drag.dy);
-			if (!drag.moved && (Math.abs(nx - n.x) > 2 || Math.abs(ny - n.y) > 2)) {
-				pushUndo();
-				drag.moved = true;
+
+			/* Snapshot before the first real movement, so undo restores the
+			   whole group's original positions in one step. */
+			if (!drag.moved) {
+				var lead = model.nodes[drag.ids[0]];
+				var o0 = drag.offs[drag.ids[0]];
+				if (lead && o0 &&
+					(Math.abs(Math.round(w.x - o0.dx) - lead.x) > 2 ||
+					 Math.abs(Math.round(w.y - o0.dy) - lead.y) > 2)) {
+					pushUndo();
+					drag.moved = true;
+				}
 			}
-			n.x = nx;
-			n.y = ny;
-			moveNodeEl(drag.id);
+
+			drag.ids.forEach(function (id) {
+				var nd = model.nodes[id], o = drag.offs[id];
+				if (!nd || !o) return;
+				nd.x = Math.round(w.x - o.dx);
+				nd.y = Math.round(w.y - o.dy);
+				moveNodeEl(id);
+			});
 			return;
 		}
 
@@ -1592,11 +1836,39 @@
 			return;
 		}
 
+		if (marquee) {
+			svg.classList.remove('is-marqueeing');
+			var box = marquee;
+			marquee = null;
+			clear(ghostLayer);
+
+			if (!box.moved) {
+				/* A click on empty canvas, not a drag: clear the selection. */
+				if (selection) select(null, null);
+				return;
+			}
+
+			var hits = nodesInRect(box);
+			if (box.additive && selection && selection.kind === 'node') {
+				selection.ids.forEach(function (id) {
+					if (hits.indexOf(id) < 0) hits.push(id);
+				});
+			}
+			select(hits.length ? 'node' : null, hits);
+			if (hits.length) {
+				flash(hits.length === 1 ? '1 node selected.' : hits.length + ' nodes selected.');
+			}
+			return;
+		}
+
 		if (drag) {
-			var g = nodeEls[drag.id];
-			if (g) g.classList.remove('is-dragging');
+			drag.ids.forEach(function (id) {
+				var g = nodeEls[id];
+				if (g) g.classList.remove('is-dragging');
+			});
 			if (drag.moved) { persist(); render(); }
-			else { select('node', drag.id); }
+			/* A click without movement collapses a multi-selection to that node. */
+			else { select('node', drag.clicked); }
 			drag = null;
 			return;
 		}
@@ -1698,6 +1970,7 @@
 	function newProject() {
 		if (!window.confirm('Start a new project? Anything unsaved will be lost.')) return;
 		model = emptyModel();
+		reattachDangling();
 		view = { x: 0, y: 0, k: 1 };
 		selection = null;
 		undoStack = [];
@@ -1935,6 +2208,14 @@
 		if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
 			e.preventDefault(); saveToFile(); return;
 		}
+		if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+			if (typing) return;
+			e.preventDefault();
+			var all = allNodes().map(function (n) { return n.id; });
+			select('node', all);
+			flash(all.length + ' nodes selected.');
+			return;
+		}
 		if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
 			if (typing) return;
 			e.preventDefault();
@@ -1956,10 +2237,10 @@
 		if (e.key === 'Delete' || e.key === 'Backspace') {
 			if (!selection) return;
 			e.preventDefault();
-			if (selection.kind === 'node') doDelete(selection.id);
+			if (selection.kind === 'node') doDelete(selection.ids);
 			else {
 				pushUndo();
-				removeEdge(selection.id);
+				removeEdge(selection.ids[0]);
 				reattachDangling();
 				selection = null;
 				render();

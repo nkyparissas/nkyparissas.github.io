@@ -870,3 +870,52 @@ kbd {
 		animation-duration: .01ms !important;
 	}
 }
+
+/* ------------------------------------------------- multi-selection */
+
+.marquee {
+	fill: rgba(178, 34, 34, .07);
+	stroke: var(--accent);
+	stroke-width: 1;
+	stroke-dasharray: 4 3;
+	pointer-events: none;
+}
+
+.canvas.is-marqueeing { cursor: crosshair; }
+
+.multi-summary {
+	font-size: 13px;
+	color: var(--ink-2);
+	margin: 0 0 .85rem;
+}
+
+.state-tally {
+	display: flex;
+	flex-wrap: wrap;
+	gap: .3rem;
+	margin-bottom: .95rem;
+}
+.tally-chip {
+	font-size: 10.5px;
+	font-weight: 700;
+	letter-spacing: .02em;
+	border-radius: 11px;
+	padding: .15rem .55rem;
+	white-space: nowrap;
+}
+
+/* Bulk state entries are buttons, not radios: they set a value rather than
+   report one, since the selection may hold several different states. */
+.state-opt.state-bulk {
+	width: 100%;
+	font-family: inherit;
+	font-size: 13px;
+	text-align: left;
+	background: transparent;
+	border: 1px solid transparent;
+	color: var(--ink);
+	cursor: pointer;
+}
+.state-opt.state-bulk:hover:not(.is-disabled) { background: var(--surface); border-color: var(--line); }
+.state-opt.state-bulk:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.state-opt.state-bulk.is-disabled { cursor: not-allowed; }
