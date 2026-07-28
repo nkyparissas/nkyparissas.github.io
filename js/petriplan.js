@@ -57,6 +57,12 @@
 	   rule gates. "Not started" and "Blocked" are always selectable. */
 	var GATED_STATES = { 'in-progress': 1, 'review': 1, 'completed': 1 };
 
+	/* Gating is also applied retroactively: if the graph changes so that a task
+	   is no longer ready, a claim that work is underway has become false and is
+	   demoted to Blocked. "Completed" is deliberately absent — finished work
+	   stays finished, and is surfaced as a warning instead. */
+	var DEMOTE_WHEN_UNREADY = { 'in-progress': 1, 'review': 1 };
+
 	/* Categorical slots, in the validated order. These are a free-choice
 	   grouping colour for the user; the encoding that carries meaning is state. */
 	var SWATCHES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'];
@@ -378,10 +384,14 @@
 			}
 			if (n.type !== 'task') return;
 
+			/* Only "Completed" can still be seen here: the started states are
+			   demoted to Blocked as soon as they stop being ready. Finished work
+			   is kept, so this is reported as a warning rather than an error. */
 			if (GATED_STATES[n.state] && !ready[id]) {
 				problems.push({
-					severity: 'error',
-					msg: labelOf(n) + ' is "' + STATE_BY_KEY[n.state].label + '" but its dependencies are not complete.',
+					severity: n.state === 'completed' ? 'warn' : 'error',
+					msg: labelOf(n) + ' is "' + STATE_BY_KEY[n.state].label +
+					     '" but work it depends on is not complete.',
 					nodeId: id
 				});
 			}
@@ -434,12 +444,44 @@
 
 	/* -------------------------------------------------------------- rendering */
 
+	/* A task claiming to be underway when its dependencies are no longer complete
+	   is stating something untrue, so the claim is withdrawn rather than merely
+	   flagged. Demoting to Blocked cannot cascade: readiness depends only on
+	   which tasks are Completed, and this never touches that, so one pass is
+	   always enough. Nothing is auto-promoted the other way — the tool has no
+	   basis for deciding that work has resumed. */
+	function demoteUnreadyTasks() {
+		var demoted = [];
+		allNodes().forEach(function (n) {
+			if (n.type !== 'task') return;
+			if (!DEMOTE_WHEN_UNREADY[n.state]) return;
+			if (analysis.ready[n.id]) return;
+			n.state = 'blocked';
+			demoted.push(n.label || 'Untitled');
+		});
+		return demoted;
+	}
+
 	function render() {
 		analysis = analyse();
+
+		var demoted = demoteUnreadyTasks();
+		if (demoted.length) analysis = analyse();   // readiness text is now stale
+
 		renderEdges();
 		renderNodes();
 		renderStatus();
 		applyViewTransform();
+
+		if (demoted.length) {
+			/* A real model change, so make sure it reaches storage even on the
+			   render paths that do not persist themselves (restore, select). */
+			persistDebounced();
+			/* After renderStatus(), which would otherwise overwrite the message,
+			   and held so the caller's own confirmation cannot bury it. */
+			flash((demoted.length === 1 ? '"' + demoted[0] + '" is' : demoted.length + ' tasks are') +
+			      ' no longer unblocked, so moved to Blocked.', true);
+		}
 	}
 
 	function renderEdges() {
@@ -588,7 +630,10 @@
 
 		var bits = [tasks.length + (tasks.length === 1 ? ' task' : ' tasks'), done + ' complete'];
 		if (readyNow) bits.push(readyNow + ' ready to start');
-		statusMsg.textContent = bits.join(' · ');
+		/* A held notice outranks the routine counts. Any later render would
+		   otherwise wipe it, and this writes to the bar without going through
+		   flash(), so the guard has to be here too. */
+		if (Date.now() >= holdUntil) statusMsg.textContent = bits.join(' · ');
 
 		var errs = analysis.problems.filter(function (p) { return p.severity === 'error'; });
 		if (analysis.problems.length) {
@@ -609,10 +654,20 @@
 	}
 
 	var flashTimer = null;
-	function flash(text) {
+	var holdUntil = 0;
+
+	/* `hold` marks a message the user must not miss — notably "your task was
+	   moved to Blocked". render() emits those, and the routine confirmation the
+	   caller flashes straight afterwards ("Connected.") would otherwise bury it. */
+	function flash(text, hold) {
+		if (!hold && Date.now() < holdUntil) return;
 		statusMsg.textContent = text;
+		if (hold) holdUntil = Date.now() + 4000;
 		if (flashTimer) clearTimeout(flashTimer);
-		flashTimer = setTimeout(function () { if (analysis) renderStatus(); }, 3200);
+		flashTimer = setTimeout(function () {
+			holdUntil = 0;
+			if (analysis) renderStatus();
+		}, hold ? 4000 : 3200);
 	}
 
 	/* ---------------------------------------------------------------- layout */
