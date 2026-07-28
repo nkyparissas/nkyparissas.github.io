@@ -703,7 +703,7 @@ a:hover { text-decoration: underline; }
 	box-shadow: var(--shadow);
 }
 .modal-card { position: relative; }
-.modal-card h2 { font-size: 26px; margin-bottom: .15em; }
+.modal-card h1 { font-size: 26px; margin-bottom: .15em; }
 
 .modal-sub {
 	font-size: 14px;

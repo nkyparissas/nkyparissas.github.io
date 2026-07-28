@@ -1,0 +1,5 @@
+# https://nkyparissas.github.io/
+User-agent: *
+Allow: /
+
+Sitemap: https://nkyparissas.github.io/sitemap.xml

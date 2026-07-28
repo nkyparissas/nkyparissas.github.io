@@ -1,11 +1,32 @@
 <!doctype html>
 <html lang="en">
 	<head>
-		<title>N. Kyparissas - PetriFlow</title>
 		<meta charset="utf-8">
+		<title>PetriFlow — visual task scheduler built on Petri nets</title>
 		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-		<meta name="description" content="PetriFlow — a dependency-aware task scheduler built on Petri nets. Runs entirely in your browser.">
+		<meta name="description" content="Plan projects as a Petri net: tasks joined by barriers, so nothing starts before its dependencies finish. Free, runs entirely in your browser, no sign-up.">
+		<meta name="author" content="Nick Kyparissas">
+		<link rel="canonical" href="https://nkyparissas.github.io/petriflow.html">
 
+		<!-- Open Graph — what Slack, LinkedIn, Discord and Facebook show -->
+		<meta property="og:type" content="website">
+		<meta property="og:site_name" content="Nick Kyparissas">
+		<meta property="og:locale" content="en_GB">
+		<meta property="og:url" content="https://nkyparissas.github.io/petriflow.html">
+		<meta property="og:title" content="PetriFlow — visual task scheduler built on Petri nets">
+		<meta property="og:description" content="Plan projects as a Petri net: tasks joined by barriers, so nothing starts before its dependencies finish. Free, runs entirely in your browser, no sign-up.">
+		<meta property="og:image" content="https://nkyparissas.github.io/img/petriflow-card.png">
+		<meta property="og:image:width" content="1200">
+		<meta property="og:image:height" content="630">
+		<meta property="og:image:alt" content="PetriFlow: a Petri net of tasks joined by barriers, showing completed, in-progress and not-started states.">
+
+		<meta name="twitter:card" content="summary_large_image">
+		<meta name="twitter:title" content="PetriFlow — visual task scheduler built on Petri nets">
+		<meta name="twitter:description" content="Plan projects as a Petri net: tasks joined by barriers, so nothing starts before its dependencies finish. Free, and runs entirely in your browser.">
+		<meta name="twitter:image" content="https://nkyparissas.github.io/img/petriflow-card.png">
+
+		<link rel="preconnect" href="https://fonts.googleapis.com">
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 		<link href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,700,800|Playfair+Display:,300, 400, 700" rel="stylesheet">
 
 		<link rel="stylesheet" href="fonts/fontawesome/css/font-awesome.min.css">
@@ -32,14 +53,60 @@
 		–––––––––––––––––––––––––––––––––––––––––––––––––– -->
 		<link rel="shortcut icon" href="./img/favicon.ico" type="image/x-icon">
 		<link rel="icon" href="./img/favicon.ico" type="image/x-icon">
+
+		<script type="application/ld+json">
+		{
+			"@context": "https://schema.org",
+			"@type": "SoftwareApplication",
+			"name": "PetriFlow",
+			"url": "https://nkyparissas.github.io/petriflow.html",
+			"description": "Plan projects as a Petri net: tasks joined by barriers, so nothing starts before its dependencies finish. Runs entirely in the browser with no sign-up and no server.",
+			"applicationCategory": "BusinessApplication",
+			"applicationSubCategory": "Project management",
+			"operatingSystem": "Any (web browser)",
+			"browserRequirements": "Requires JavaScript",
+			"image": "https://nkyparissas.github.io/img/petriflow-card.png",
+			"screenshot": "https://nkyparissas.github.io/img/petriflow-card.png",
+			"license": "https://creativecommons.org/licenses/by/4.0/",
+			"isAccessibleForFree": true,
+			"offers": {
+				"@type": "Offer",
+				"price": "0",
+				"priceCurrency": "EUR"
+			},
+			"author": {
+				"@type": "Person",
+				"name": "Nick Kyparissas",
+				"url": "https://nkyparissas.github.io/",
+				"sameAs": [
+					"https://github.com/nkyparissas",
+					"https://orcid.org/0000-0001-6868-5163",
+					"https://www.linkedin.com/in/nkyparissas"
+				]
+			},
+			"featureList": [
+				"Model task dependencies as a Petri net with AND-join barriers",
+				"Track task state: not started, in progress, blocked, under review, completed",
+				"Automatic layout by dependency depth",
+				"Detects circular dependencies and unreachable tasks",
+				"Save and reopen projects as a plain JSON file",
+				"Works offline; nothing is uploaded to a server"
+			]
+		}
+		</script>
 	</head>
 	<body>
 
 		<noscript>
 			<div class="noscript">
-				<h1>This tool needs JavaScript</h1>
-				<p>PetriFlow is an interactive editor, so it cannot work as static markup. It uses no
-				third-party libraries and sends nothing anywhere &mdash; everything runs locally in this tab.</p>
+				<h2>PetriFlow &mdash; a visual task scheduler built on Petri nets</h2>
+				<p>PetriFlow lets you plan a project as a Petri net: <b>tasks</b> joined by
+				<b>barriers</b>, where a task may only begin once every task feeding its incoming
+				barrier is complete. Parallel branches, synchronisation points and circular-dependency
+				detection all come for free from the structure.</p>
+				<p>It needs JavaScript, because it is an interactive editor rather than a static page.
+				It uses no third-party libraries and sends nothing anywhere &mdash; your project lives
+				in this browser and saves to a plain JSON file you keep.</p>
 				<p><a href="index.html">&larr; Back to the site</a></p>
 			</div>
 		</noscript>
@@ -174,7 +241,7 @@
 		<div class="modal" id="helpModal" hidden>
 			<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
 				<button type="button" class="modal-x" id="helpX" aria-label="Close">&#10005;</button>
-				<h2 id="helpTitle">PetriFlow</h2>
+				<h1 id="helpTitle">PetriFlow</h1>
 				<p class="modal-sub">Plan work as a Petri net: tasks joined by barriers, so nothing starts
 				before the work it depends on has finished.</p>
 
