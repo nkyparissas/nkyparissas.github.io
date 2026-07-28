@@ -1,5 +1,5 @@
 /* =============================================================================
- * PetriFlow — Petri-net task scheduler
+ * PetriPlan — Petri-net task scheduler
  *
  * Copyright (c) 2026 Nick Kyparissas — https://github.com/nkyparissas
  * Licensed under CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
@@ -26,15 +26,10 @@
 	'use strict';
 
 	var SVGNS = 'http://www.w3.org/2000/svg';
-	var STORAGE_KEY = 'petriflow:autosave';
-	var THEME_KEY = 'petriflow:theme';   // also read by the inline script in <head>
-	var FILE_FORMAT = 'petriflow';
+	var STORAGE_KEY = 'petriplan:autosave';
+	var THEME_KEY = 'petriplan:theme';   // also read by the inline script in <head>
+	var FILE_FORMAT = 'petriplan';
 	var FILE_VERSION = 1;
-
-	/* Names used before the tool was called PetriFlow. Still read, never written,
-	   so work saved under the old name keeps opening. */
-	var LEGACY_STORAGE_KEY = 'petri-scheduler:autosave';
-	var LEGACY_FILE_FORMATS = ['petri-task-schedule'];
 
 	var ROOT_ID = 'root';
 	var END_ID = 'end';
@@ -44,12 +39,16 @@
 	/* Status palette. Green and red are ~indistinguishable under deuteranopia
 	   (validated: CVD dE 4.1), so state is carried redundantly by a glyph, a
 	   text label, and a border dash pattern. Colour is never the only channel. */
+	/* Steps are chosen so WHITE text clears 4.5:1 on every pill, which is why
+	   they sit darker than a plain status palette would. "Under review" is the
+	   exception and keeps black ink: white on amber measures 1.83:1, which is
+	   unreadable, while black on it measures 10.73:1. */
 	var STATES = [
-		{ key: 'not-started', label: 'Not started',  glyph: '○', color: '#898781', ink: '#0b0b0b', dash: '2 3' },
-		{ key: 'in-progress', label: 'In progress',  glyph: '▶', color: '#2a78d6', ink: '#ffffff', dash: '' },
-		{ key: 'blocked',     label: 'Blocked',      glyph: '✕', color: '#d03b3b', ink: '#ffffff', dash: '7 4' },
+		{ key: 'not-started', label: 'Not started',  glyph: '○', color: '#73716c', ink: '#ffffff', dash: '2 3' },
+		{ key: 'in-progress', label: 'In progress',  glyph: '▶', color: '#2771cb', ink: '#ffffff', dash: '' },
+		{ key: 'blocked',     label: 'Blocked',      glyph: '✕', color: '#d03939', ink: '#ffffff', dash: '7 4' },
 		{ key: 'review',      label: 'Under review', glyph: '◆', color: '#fab219', ink: '#0b0b0b', dash: '10 3 2 3' },
-		{ key: 'completed',   label: 'Completed',    glyph: '✓', color: '#0ca30c', ink: '#0b0b0b', dash: '' }
+		{ key: 'completed',   label: 'Completed',    glyph: '✓', color: '#0a830a', ink: '#ffffff', dash: '' }
 	];
 	var STATE_BY_KEY = {};
 	STATES.forEach(function (s) { STATE_BY_KEY[s.key] = s; });
@@ -557,8 +556,8 @@
 		var done = analysis.satisfied[n.id];
 		el('rect', {
 			'class': 'barrier-bar', width: BAR_W, height: BAR_H, rx: 4,
-			fill: done ? '#0ca30c' : (n.fixed ? '#52514e' : '#898781'),
-			stroke: done ? '#0ca30c' : '#52514e'
+			fill: done ? '#0a830a' : (n.fixed ? '#52514e' : '#898781'),
+			stroke: done ? '#0a830a' : '#52514e'
 		}, g);
 
 		return g;
@@ -1036,10 +1035,8 @@
 	}
 
 	function deserialize(data) {
-		if (!data || typeof data !== 'object') throw new Error('Not a PetriFlow file.');
-		if (data.format && data.format !== FILE_FORMAT && LEGACY_FILE_FORMATS.indexOf(data.format) < 0) {
-			throw new Error('Unrecognised file format.');
-		}
+		if (!data || typeof data !== 'object') throw new Error('Not a PetriPlan file.');
+		if (data.format && data.format !== FILE_FORMAT) throw new Error('Unrecognised file format.');
 		if (!Array.isArray(data.nodes) || !Array.isArray(data.edges)) throw new Error('File is missing nodes or edges.');
 
 		var next = { project: String(data.project || 'Untitled project'), nodes: {}, edges: {} };
@@ -1341,12 +1338,7 @@
 	function restore() {
 		try {
 			var raw = localStorage.getItem(STORAGE_KEY);
-			if (!raw) {
-				/* Pick up work autosaved before the rename, then let the next
-				   persist() write it under the current key. */
-				raw = localStorage.getItem(LEGACY_STORAGE_KEY);
-				if (!raw) return false;
-			}
+			if (!raw) return false;
 			deserialize(JSON.parse(raw));
 			return true;
 		} catch (err) {

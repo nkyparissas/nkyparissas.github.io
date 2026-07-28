@@ -1,5 +1,5 @@
 /* ==========================================================================
-   PetriFlow — self-contained styles.
+   PetriPlan — self-contained styles.
    No Bootstrap, no framework. Colours follow the site theme (FireBrick accent,
    Open Sans / Playfair Display) and are declared once as custom properties so
    the dark theme is a value swap rather than a second stylesheet.
@@ -25,14 +25,15 @@
 	--shadow:       0 4px 16px rgba(11, 11, 11, .10);
 	--node-fill:    #ffffff;
 
-	/* Task state palette — status roles, validated against both surfaces.
-	   Green/red are indistinguishable under deuteranopia, so every state also
-	   carries a glyph, a text label and its own border dash pattern. */
-	--st-not-started: #898781;
-	--st-in-progress: #2a78d6;
-	--st-blocked:     #d03b3b;
+	/* Task state palette. Steps sit darker than a plain status palette so that
+	   WHITE pill text clears 4.5:1 on every one of them. Green/red remain
+	   indistinguishable under deuteranopia, so every state also carries a glyph,
+	   a text label and its own border dash pattern. */
+	--st-not-started: #73716c;
+	--st-in-progress: #2771cb;
+	--st-blocked:     #d03939;
 	--st-review:      #fab219;
-	--st-completed:   #0ca30c;
+	--st-completed:   #0a830a;
 
 	--radius: 4px;
 	--bar-h: 56px;
@@ -56,8 +57,6 @@
 		--grid-dot:     #2c2c2a;
 		--shadow:       0 4px 16px rgba(0, 0, 0, .45);
 		--node-fill:    #232322;
-
-		--st-in-progress: #3987e5;
 	}
 }
 
@@ -77,8 +76,6 @@
 	--grid-dot:     #2c2c2a;
 	--shadow:       0 4px 16px rgba(0, 0, 0, .45);
 	--node-fill:    #232322;
-
-	--st-in-progress: #3987e5;
 }
 
 * { box-sizing: border-box; }

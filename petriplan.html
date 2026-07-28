@@ -2,28 +2,28 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8">
-		<title>PetriFlow — visual task scheduler built on Petri nets</title>
+		<title>PetriPlan — visual task scheduler built on Petri nets</title>
 		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 		<meta name="description" content="Plan projects as a Petri net: tasks joined by barriers, so nothing starts before its dependencies finish. Free, runs entirely in your browser, no sign-up.">
 		<meta name="author" content="Nick Kyparissas">
-		<link rel="canonical" href="https://nkyparissas.github.io/petriflow.html">
+		<link rel="canonical" href="https://nkyparissas.github.io/petriplan.html">
 
 		<!-- Open Graph — what Slack, LinkedIn, Discord and Facebook show -->
 		<meta property="og:type" content="website">
 		<meta property="og:site_name" content="Nick Kyparissas">
 		<meta property="og:locale" content="en_GB">
-		<meta property="og:url" content="https://nkyparissas.github.io/petriflow.html">
-		<meta property="og:title" content="PetriFlow — visual task scheduler built on Petri nets">
+		<meta property="og:url" content="https://nkyparissas.github.io/petriplan.html">
+		<meta property="og:title" content="PetriPlan — visual task scheduler built on Petri nets">
 		<meta property="og:description" content="Plan projects as a Petri net: tasks joined by barriers, so nothing starts before its dependencies finish. Free, runs entirely in your browser, no sign-up.">
-		<meta property="og:image" content="https://nkyparissas.github.io/img/petriflow-card.png">
+		<meta property="og:image" content="https://nkyparissas.github.io/img/petriplan-card.png">
 		<meta property="og:image:width" content="1200">
 		<meta property="og:image:height" content="630">
-		<meta property="og:image:alt" content="PetriFlow: a Petri net of tasks joined by barriers, showing completed, in-progress and not-started states.">
+		<meta property="og:image:alt" content="PetriPlan: a Petri net of tasks joined by barriers, showing completed, in-progress and not-started states.">
 
 		<meta name="twitter:card" content="summary_large_image">
-		<meta name="twitter:title" content="PetriFlow — visual task scheduler built on Petri nets">
+		<meta name="twitter:title" content="PetriPlan — visual task scheduler built on Petri nets">
 		<meta name="twitter:description" content="Plan projects as a Petri net: tasks joined by barriers, so nothing starts before its dependencies finish. Free, and runs entirely in your browser.">
-		<meta name="twitter:image" content="https://nkyparissas.github.io/img/petriflow-card.png">
+		<meta name="twitter:image" content="https://nkyparissas.github.io/img/petriplan-card.png">
 
 		<link rel="preconnect" href="https://fonts.googleapis.com">
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -33,15 +33,15 @@
 		<link rel="stylesheet" href="fonts/academicons/css/academicons.min.css">
 
 		<!-- Tool style (self-contained: no Bootstrap, no jQuery) -->
-		<link rel="stylesheet" href="css/petriflow.css">
+		<link rel="stylesheet" href="css/petriplan.css">
 
 		<!-- Applies the saved theme before the first paint, so choosing light on a
 		     dark-mode machine does not flash dark on every load. Must stay inline
-		     and in <head>; deferring it to petriflow.js is what causes the flash. -->
+		     and in <head>; deferring it to petriplan.js is what causes the flash. -->
 		<script>
 			(function () {
 				try {
-					var t = localStorage.getItem('petriflow:theme');
+					var t = localStorage.getItem('petriplan:theme');
 					if (t === 'light' || t === 'dark') {
 						document.documentElement.setAttribute('data-theme', t);
 					}
@@ -58,15 +58,15 @@
 		{
 			"@context": "https://schema.org",
 			"@type": "SoftwareApplication",
-			"name": "PetriFlow",
-			"url": "https://nkyparissas.github.io/petriflow.html",
+			"name": "PetriPlan",
+			"url": "https://nkyparissas.github.io/petriplan.html",
 			"description": "Plan projects as a Petri net: tasks joined by barriers, so nothing starts before its dependencies finish. Runs entirely in the browser with no sign-up and no server.",
 			"applicationCategory": "BusinessApplication",
 			"applicationSubCategory": "Project management",
 			"operatingSystem": "Any (web browser)",
 			"browserRequirements": "Requires JavaScript",
-			"image": "https://nkyparissas.github.io/img/petriflow-card.png",
-			"screenshot": "https://nkyparissas.github.io/img/petriflow-card.png",
+			"image": "https://nkyparissas.github.io/img/petriplan-card.png",
+			"screenshot": "https://nkyparissas.github.io/img/petriplan-card.png",
 			"license": "https://creativecommons.org/licenses/by/4.0/",
 			"isAccessibleForFree": true,
 			"offers": {
@@ -99,8 +99,8 @@
 
 		<noscript>
 			<div class="noscript">
-				<h2>PetriFlow &mdash; a visual task scheduler built on Petri nets</h2>
-				<p>PetriFlow lets you plan a project as a Petri net: <b>tasks</b> joined by
+				<h2>PetriPlan &mdash; a visual task scheduler built on Petri nets</h2>
+				<p>PetriPlan lets you plan a project as a Petri net: <b>tasks</b> joined by
 				<b>barriers</b>, where a task may only begin once every task feeding its incoming
 				barrier is complete. Parallel branches, synchronisation points and circular-dependency
 				detection all come for free from the structure.</p>
@@ -116,7 +116,7 @@
 			<header class="app-bar">
 				<div class="bar-group bar-project">
 					<a href="index.html" class="home-link" title="Back to the site" aria-label="Back to the site">&#8592;</a>
-					<span class="brand">PetriFlow</span>
+					<span class="brand">PetriPlan</span>
 					<label class="sr-only" for="projectName">Project name</label>
 					<input id="projectName" class="project-name" type="text" value="Untitled project"
 					       spellcheck="false" autocomplete="off">
@@ -172,7 +172,7 @@
 						</marker>
 						<marker id="arwDone" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
 						        orient="auto-start-reverse">
-							<path d="M 0 1 L 10 5 L 0 9 z" fill="#0ca30c"></path>
+							<path d="M 0 1 L 10 5 L 0 9 z" fill="#0a830a"></path>
 						</marker>
 						<marker id="arwSel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
 						        orient="auto-start-reverse">
@@ -217,7 +217,7 @@
 				<li><a href="index.html">Home</a></li>
 				<li><a href="publications.html">Publications</a></li>
 				<li><a href="interesting_stuff.html">Interesting Stuff</a></li>
-				<li class="active"><a href="petriflow.html">PetriFlow</a></li>
+				<li class="active"><a href="petriplan.html">PetriPlan</a></li>
 			</ul>
 
 			<ul class="social">
@@ -228,7 +228,7 @@
 			</ul>
 
 			<p class="menu-foot">
-				<b>PetriFlow</b> &mdash; 100% vibecoded<br>
+				<b>PetriPlan</b> &mdash; 100% vibecoded<br>
 				by <a href="index.html">Nick Kyparissas</a>
 				<span class="menu-year">&middot; &copy;<script>document.write(new Date().getFullYear());</script></span>
 			</p>
@@ -242,13 +242,13 @@
 		<div class="modal" id="helpModal" hidden>
 			<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
 				<button type="button" class="modal-x" id="helpX" aria-label="Close">&#10005;</button>
-				<h1 id="helpTitle">PetriFlow</h1>
+				<h1 id="helpTitle">PetriPlan</h1>
 				<p class="modal-sub">Plan work as a Petri net: tasks joined by barriers, so nothing starts
 				before the work it depends on has finished.</p>
 
 				<p class="disclaimer">
 					<b>Experimental tool — use at your own risk.</b>
-					PetriFlow is a personal side project provided as-is, with no warranty of any kind and
+					PetriPlan is a personal side project provided as-is, with no warranty of any kind and
 					no responsibility taken for lost, corrupted, or unreadable save files, or for any
 					decision made on the basis of what it shows. Your work lives in this browser's local
 					storage, which <b>can be cleared without warning</b> by the browser, by private-browsing
@@ -299,6 +299,6 @@
 			</div>
 		</div>
 
-		<script src="js/petriflow.js"></script>
+		<script src="js/petriplan.js"></script>
 	</body>
 </html>
