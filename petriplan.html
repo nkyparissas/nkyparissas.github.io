@@ -138,6 +138,8 @@
 
 					<button type="button" class="btn" id="btnArrange" title="Auto-arrange the layout (A)">Auto-arrange</button>
 					<button type="button" class="btn" id="btnFit" title="Fit everything on screen (F)">Fit</button>
+					<button type="button" class="btn btn-toggle" id="btnCritical" aria-pressed="true"
+					        title="Show the critical path (P)">Critical path</button>
 
 					<span class="bar-sep" aria-hidden="true"></span>
 
@@ -280,6 +282,7 @@
 					<li><kbd>A</kbd> auto-arrange</li>
 					<li><kbd>F</kbd> fit to screen</li>
 					<li><kbd>E</kbd> export a PNG</li>
+					<li><kbd>P</kbd> toggle the critical path</li>
 					<li><kbd>Delete</kbd> remove selection</li>
 					<li><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo</li>
 					<li><kbd>Ctrl</kbd>+<kbd>S</kbd> save to file</li>
@@ -298,6 +301,9 @@
 				<b>slack</b> each task has, and which tasks sit on the <b>critical path</b> where slack is
 				zero. Critical work is drawn with heavier lines. If a task is booked to start before the
 				work it depends on can finish, that is reported as a problem.</p>
+				<p>The <b>Critical path</b> button turns that emphasis on and off, and your choice is
+				remembered. It only becomes available once some task has dates; a task's own panel always
+				reports its slack either way.</p>
 
 				<h3>Exporting a picture</h3>
 				<p><b>PNG</b> writes out a 12-megapixel image framed exactly as <b>Fit</b> would show it,

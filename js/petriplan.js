@@ -28,6 +28,7 @@
 	var SVGNS = 'http://www.w3.org/2000/svg';
 	var STORAGE_KEY = 'petriplan:autosave';
 	var THEME_KEY = 'petriplan:theme';   // also read by the inline script in <head>
+	var CRITICAL_KEY = 'petriplan:critical';
 	var FILE_FORMAT = 'petriplan';
 	var FILE_VERSION = 1;
 
@@ -103,6 +104,7 @@
 	   one id; node selections may hold many. */
 	var selection = null;
 	var connectMode = false;
+	var showCritical = true;           // canvas emphasis only; the panel always reports slack
 	var connectFrom = null;            // node id
 	var analysis = null;               // recomputed on every render
 
@@ -653,7 +655,7 @@
 			var cls = 'edge';
 			if (e.auto) cls += ' is-auto';
 			if (analysis.satisfied[e.from]) cls += ' is-satisfied';
-			if (analysis.schedule &&
+			if (showCritical && analysis.schedule &&
 				analysis.schedule.critical[e.from] && analysis.schedule.critical[e.to]) {
 				cls += ' is-critical';
 			}
@@ -894,7 +896,7 @@
 		if (connectFrom === n.id) cls += ' is-connect-source';
 		if (analysis.inCycle[n.id]) cls += ' is-cycle';
 		if (n.type === 'task' && !analysis.ready[n.id] && n.state !== 'completed') cls += ' is-gated';
-		if (analysis.schedule && analysis.schedule.critical[n.id]) cls += ' is-critical';
+		if (showCritical && analysis.schedule && analysis.schedule.critical[n.id]) cls += ' is-critical';
 		return cls;
 	}
 
@@ -1015,6 +1017,8 @@
 		   otherwise wipe it, and this writes to the bar without going through
 		   flash(), so the guard has to be here too. */
 		if (Date.now() >= holdUntil) statusMsg.textContent = bits.join(' · ');
+
+		syncCriticalButton();
 
 		var errs = analysis.problems.filter(function (p) { return p.severity === 'error'; });
 		if (analysis.problems.length) {
@@ -2482,6 +2486,29 @@
 		if (x) x.focus();
 	}
 
+	/* -------------------------------------------------------- critical path */
+
+	function syncCriticalButton() {
+		var btn = $('btnCritical');
+		if (!btn) return;
+		var available = !!(analysis && analysis.schedule);
+		btn.disabled = !available;
+		btn.setAttribute('aria-pressed', showCritical && available ? 'true' : 'false');
+		btn.title = !available
+			? 'Give a task start and end dates to see the critical path'
+			: (showCritical ? 'Hide the critical path (P)' : 'Show the critical path (P)');
+	}
+
+	function setCritical(on) {
+		showCritical = !!on;
+		try { localStorage.setItem(CRITICAL_KEY, showCritical ? 'on' : 'off'); } catch (err) { /* no-op */ }
+		render();
+		/* After render(), which rewrites the status bar. */
+		if (analysis && analysis.schedule) {
+			flash(showCritical ? 'Critical path shown.' : 'Critical path hidden.');
+		}
+	}
+
 	/* ---------------------------------------------------------------- theme */
 
 	/* An explicit choice wins over the OS setting and is remembered. With no
@@ -2530,6 +2557,8 @@
 		canvasHint = $('canvasHint');
 		zoomControls = document.querySelector('.zoom-controls');
 
+		try { showCritical = localStorage.getItem(CRITICAL_KEY) !== 'off'; } catch (err) { /* no-op */ }
+
 		var restored = restore();
 		if (!restored) { seedExample(); layoutGraph(); }
 
@@ -2545,6 +2574,7 @@
 		$('btnConnect').addEventListener('click', function () { setConnectMode(!connectMode); });
 		$('btnArrange').addEventListener('click', autoArrange);
 		$('btnFit').addEventListener('click', fitToView);
+		$('btnCritical').addEventListener('click', function () { setCritical(!showCritical); });
 		$('btnSave').addEventListener('click', saveToFile);
 		$('btnExport').addEventListener('click', exportPNG);
 		$('btnNew').addEventListener('click', newProject);
@@ -2683,6 +2713,7 @@
 			case 'a': autoArrange(); break;
 			case 'f': fitToView(); break;
 			case 'e': exportPNG(); break;
+			case 'p': if (analysis && analysis.schedule) setCritical(!showCritical); break;
 			default: break;
 		}
 	}
