@@ -272,11 +272,18 @@ a:hover { text-decoration: underline; }
 	display: block;
 	background: var(--canvas);
 	touch-action: none;      /* we handle pan/zoom ourselves via pointer events */
-	cursor: grab;
+	/* A plain drag rubber-bands a selection, so the resting cursor is the arrow.
+	   A grab hand would promise panning, which now needs Shift. */
+	cursor: default;
 	user-select: none;
 	-webkit-user-select: none;
 }
 .canvas:focus { outline: none; }
+
+/* Source order is the priority order here — every rule has equal specificity.
+   Holding Shift is only an offer to pan; an active gesture or mode outranks it. */
+.canvas.is-pan-ready { cursor: grab; }
+.canvas.is-marqueeing { cursor: crosshair; }
 .canvas.is-panning { cursor: grabbing; }
 .canvas.is-connecting { cursor: crosshair; }
 
@@ -509,6 +516,9 @@ a:hover { text-decoration: underline; }
 
 .node { cursor: grab; }
 .node.is-dragging { cursor: grabbing; }
+/* With Shift down a node cannot be dragged — the click toggles its selection —
+   so it stops advertising a grab. */
+.canvas.is-pan-ready .node { cursor: default; }
 
 .node-box {
 	fill: var(--node-fill);

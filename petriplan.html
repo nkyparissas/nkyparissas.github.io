@@ -138,8 +138,8 @@
 
 					<button type="button" class="btn" id="btnArrange" title="Auto-arrange the layout (A)">Auto-arrange</button>
 					<button type="button" class="btn" id="btnFit" title="Fit everything on screen (F)">Fit</button>
-					<button type="button" class="btn btn-toggle" id="btnCritical" aria-pressed="true"
-					        title="Show the critical path (P)">Critical path</button>
+					<button type="button" class="btn btn-toggle" id="btnCritical" aria-pressed="false"
+					        disabled title="Give a task start and end dates to see the critical path">Critical path</button>
 
 					<span class="bar-sep" aria-hidden="true"></span>
 
@@ -271,7 +271,8 @@
 					<li><b>Drag on empty canvas</b> to rubber-band select several nodes, then drag any one of
 					them to move the whole group. <kbd>Shift</kbd>+click adds or removes a single node.
 					To <b>pan</b>, hold <kbd>Shift</kbd> while dragging, or drag with the middle mouse
-					button. On a touchscreen one finger still pans as before.</li>
+					button &mdash; the cursor turns into a grab hand while <kbd>Shift</kbd> is down.
+					On a touchscreen one finger still pans as before.</li>
 				</ul>
 
 				<h3>Keyboard</h3>

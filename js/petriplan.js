@@ -666,183 +666,28 @@
 		});
 	}
 
-	/* ------------------------------------------------------------ edge routing
+	/* ------------------------------------------------------------ edge geometry
 	 *
-	 * Edges are orthogonal polylines with rounded corners rather than free
-	 * curves, because a curve cannot be steered around anything. Every route is
-	 * built from axis-aligned segments, which makes the obstacle test a pair of
-	 * interval overlaps instead of general segment/rectangle intersection.
-	 *
-	 * Several routes are proposed per edge, cheapest first, and the first one
-	 * that touches no other node wins. This is not a general path-finder: it
-	 * handles the cases a left-to-right dependency graph actually produces —
-	 * a straight run, a step between rows, and a detour over or under whatever
-	 * sits in the way.
+	 * Edges are smooth cubic curves: they leave a node horizontally, bow across,
+	 * and arrive horizontally. Orthogonal routing with obstacle avoidance was
+	 * tried and removed — it kept sending long edges on wide detours that read as
+	 * going the wrong way, which was worse to look at than the occasional
+	 * crossing it prevented. Auto-arrange keeps crossings rare in practice.
 	 */
 
-	var EDGE_STUB = 18;      // straight run off a node before the first turn
-	var EDGE_APPROACH = 34;  // longer run into a node on a detour, so the last
-	                         // corner is a sweep rather than a cramped hook
-	var EDGE_CLEAR = 12;     // keep this far away from other nodes
-	var EDGE_LABEL_CLEAR = 5;
-	var EDGE_RADIUS = 10;    // corner rounding
-
-	function nodeRect(n, pad) {
-		return {
-			x0: n.x - pad, y0: n.y - pad,
-			x1: n.x + nodeW(n) + pad, y1: n.y + nodeH(n) + pad
-		};
+	function edgeCurve(a, b) {
+		var bx = b.x - 3;                              // room for the arrowhead
+		var dx = Math.max(38, Math.abs(bx - a.x) * 0.45);
+		return 'M ' + a.x + ' ' + a.y +
+		       ' C ' + (a.x + dx) + ' ' + a.y +
+		       ', ' + (bx - dx) + ' ' + b.y +
+		       ', ' + bx + ' ' + b.y;
 	}
 
-	/* The label sits above the node, centred, and is regularly wider than what it
-	   labels — "Project complete" renders ~110px over an 18px barrier. Routing
-	   around the box alone therefore still draws lines through the text. */
-	function labelRect(n) {
-		var chars = Math.min((n.label || '').length, n.type === 'task' ? 30 : 22);
-		var half = Math.max(nodeW(n), chars * 6.6) / 2;
-		var mid = n.x + nodeW(n) / 2;
-		return {
-			x0: mid - half - EDGE_LABEL_CLEAR,
-			y0: n.y - 22 - EDGE_LABEL_CLEAR,
-			x1: mid + half + EDGE_LABEL_CLEAR,
-			y1: n.y - 2 + EDGE_LABEL_CLEAR
-		};
-	}
-
-	/* Routes are axis-aligned by construction, so this only has to handle
-	   horizontal and vertical segments. */
-	function segHitsRect(p, q, r) {
-		if (p.y === q.y) {
-			if (p.y <= r.y0 || p.y >= r.y1) return false;
-			return Math.max(p.x, q.x) > r.x0 && Math.min(p.x, q.x) < r.x1;
-		}
-		if (p.x === q.x) {
-			if (p.x <= r.x0 || p.x >= r.x1) return false;
-			return Math.max(p.y, q.y) > r.y0 && Math.min(p.y, q.y) < r.y1;
-		}
-		return false;
-	}
-
-	function routeBlocked(pts, rects) {
-		for (var i = 0; i < pts.length - 1; i++) {
-			for (var j = 0; j < rects.length; j++) {
-				if (segHitsRect(pts[i], pts[i + 1], rects[j])) return true;
-			}
-		}
-		return false;
-	}
-
-	function routeEdge(A, B, rects) {
-		var bx = B.x - 2;                       // room for the arrowhead
-		var start = { x: A.x, y: A.y }, end = { x: bx, y: B.y };
-		var level = Math.abs(A.y - B.y) < 0.5;
-		var cands = [];
-
-		if (level) cands.push([start, end]);
-
-		if (bx - A.x > EDGE_STUB * 2) {
-			var mx = Math.round((A.x + bx) / 2);
-			cands.push([start, { x: mx, y: A.y }, { x: mx, y: B.y }, end]);
-		}
-
-		/* Only nodes standing between the two ends can force a detour. */
-		var lo = Math.min(A.x, bx), hi = Math.max(A.x, bx);
-		var between = rects.filter(function (r) { return r.x1 > lo && r.x0 < hi; });
-
-		if (between.length) {
-			var top = Infinity, bottom = -Infinity;
-			between.forEach(function (r) {
-				top = Math.min(top, r.y0);
-				bottom = Math.max(bottom, r.y1);
-			});
-			var ax2 = A.x + EDGE_STUB, bx2 = bx - EDGE_APPROACH;
-			var lanes = [bottom + EDGE_CLEAR, top - EDGE_CLEAR];
-			/* Try whichever side is the shorter deviation first. */
-			if (Math.abs(lanes[1] - A.y) < Math.abs(lanes[0] - A.y)) lanes.reverse();
-			lanes.forEach(function (ly) {
-				cands.push([
-					start, { x: ax2, y: A.y }, { x: ax2, y: ly },
-					{ x: bx2, y: ly }, { x: bx2, y: B.y }, end
-				]);
-			});
-		}
-
-		/* Target sits left of the source (only reachable by dragging): leave and
-		   enter forwards, looping around outside everything in between. */
-		if (bx - A.x <= EDGE_STUB * 2) {
-			var outY = (between.length
-				? Math.max.apply(null, between.map(function (r) { return r.y1; })) + EDGE_CLEAR
-				: Math.max(A.y, B.y) + 60);
-			cands.push([
-				start, { x: A.x + EDGE_STUB, y: A.y }, { x: A.x + EDGE_STUB, y: outY },
-				{ x: bx - EDGE_APPROACH, y: outY }, { x: bx - EDGE_APPROACH, y: B.y }, end
-			]);
-		}
-
-		for (var i = 0; i < cands.length; i++) {
-			if (!routeBlocked(cands[i], rects)) return cands[i];
-		}
-		/* Nothing clear: fall back to the tidiest shape rather than nothing. */
-		return cands[cands.length - 1] || [start, end];
-	}
-
-	function tidyPoints(pts) {
-		var out = [];
-		pts.forEach(function (p) {
-			var last = out[out.length - 1];
-			if (last && Math.abs(last.x - p.x) < 0.5 && Math.abs(last.y - p.y) < 0.5) return;
-			out.push(p);
-		});
-		/* Drop a middle point that lies on a straight run. */
-		for (var i = 1; i < out.length - 1; i++) {
-			var p0 = out[i - 1], p1 = out[i], p2 = out[i + 1];
-			if ((p0.x === p1.x && p1.x === p2.x) || (p0.y === p1.y && p1.y === p2.y)) {
-				out.splice(i, 1);
-				i--;
-			}
-		}
-		return out;
-	}
-
-	function roundedPath(pts, radius) {
-		pts = tidyPoints(pts);
-		if (pts.length < 2) return '';
-		if (pts.length === 2) {
-			return 'M ' + pts[0].x + ' ' + pts[0].y + ' L ' + pts[1].x + ' ' + pts[1].y;
-		}
-
-		var d = 'M ' + pts[0].x + ' ' + pts[0].y;
-		for (var i = 1; i < pts.length - 1; i++) {
-			var p0 = pts[i - 1], p1 = pts[i], p2 = pts[i + 1];
-			var d1 = Math.hypot(p1.x - p0.x, p1.y - p0.y);
-			var d2 = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-			var r = Math.min(radius, d1 / 2, d2 / 2);
-			if (r < 0.5) { d += ' L ' + p1.x + ' ' + p1.y; continue; }
-			var t1 = { x: p1.x + (p0.x - p1.x) * (r / d1), y: p1.y + (p0.y - p1.y) * (r / d1) };
-			var t2 = { x: p1.x + (p2.x - p1.x) * (r / d2), y: p1.y + (p2.y - p1.y) * (r / d2) };
-			d += ' L ' + round1(t1.x) + ' ' + round1(t1.y) +
-			     ' Q ' + p1.x + ' ' + p1.y + ' ' + round1(t2.x) + ' ' + round1(t2.y);
-		}
-		var last = pts[pts.length - 1];
-		return d + ' L ' + last.x + ' ' + last.y;
-	}
-
-	function round1(v) { return Math.round(v * 10) / 10; }
-
-	/* Everything a routing pass needs, built once instead of per edge: the
-	   obstacles to avoid, and where each edge should attach. */
-	function routingContext() {
-		var rects = [];
-		allNodes().forEach(function (n) {
-			rects.push({ id: n.id, r: nodeRect(n, EDGE_CLEAR) });
-			rects.push({ id: n.id, r: labelRect(n) });
-		});
-		return { rects: rects, anchors: buildAnchors() };
-	}
-
-	/* Several edges meeting one node used to land on the same point, so their
-	   arrowheads stacked. Spread them along the node's edge instead, ordered by
-	   where the other end sits so the lines do not cross each other on the way in. */
+	/* Where each edge attaches. Several edges meeting one node would otherwise
+	   land on the same point and stack their arrowheads, so they are spread along
+	   the node's edge, ordered by where the other end sits to keep them from
+	   crossing on the way in. */
 	function buildAnchors() {
 		var out = {}, into = {};
 		var centreY = function (id) {
@@ -855,7 +700,7 @@
 			var spread = function (edges, otherEnd, x, store) {
 				edges.sort(function (p, q) { return centreY(otherEnd(p)) - centreY(otherEnd(q)); });
 				var c = edges.length;
-				var gap = c > 1 ? Math.min(16, (h * 0.62) / (c - 1)) : 0;
+				var gap = c > 1 ? Math.min(14, (h * 0.55) / (c - 1)) : 0;
 				edges.forEach(function (e, i) {
 					store[e.id] = {
 						x: x,
@@ -872,15 +717,14 @@
 		return { out: out, in: into };
 	}
 
+	function routingContext() { return { anchors: buildAnchors() }; }
+
 	function edgePathFor(e, a, b, ctx) {
-		var rects = [];
-		for (var i = 0; i < ctx.rects.length; i++) {
-			if (ctx.rects[i].id !== a.id && ctx.rects[i].id !== b.id) rects.push(ctx.rects[i].r);
-		}
 		var A = ctx.anchors.out[e.id] || outAnchor(a);
 		var B = ctx.anchors.in[e.id] || inAnchor(b);
-		return roundedPath(routeEdge(A, B, rects), EDGE_RADIUS);
+		return edgeCurve(A, B);
 	}
+
 
 	function renderNodes() {
 		clear(nodeLayer);
@@ -983,10 +827,10 @@
 
 	function moveNodeEl(id) { moveNodeEls([id]); }
 
-	/* Every edge is re-routed, not only those touching the moved node: moving a
+	/* Every edge is recomputed, not only those touching the moved node: moving a
 	   node reorders the fanned anchors at its neighbours, which shifts edges that
-	   do not touch it. Routing the whole graph costs a few milliseconds and this
-	   only rewrites the `d` attribute, so there is no DOM churn. */
+	   do not touch it. This only rewrites the `d` attribute, so there is no DOM
+	   churn. */
 	function refreshEdgePaths() {
 		var ctx = routingContext();
 		allEdges().forEach(function (e) {
@@ -2486,6 +2330,26 @@
 		if (x) x.focus();
 	}
 
+	/* --------------------------------------------------------------- cursor */
+
+	/* CSS cannot see a modifier key, so the Shift-to-pan affordance has to be
+	   mirrored onto a class. */
+	function setPanReady(on) {
+		if (svg) svg.classList.toggle('is-pan-ready', !!on);
+	}
+
+	function watchPanModifier() {
+		window.addEventListener('keydown', function (e) {
+			if (e.key === 'Shift') setPanReady(true);
+		});
+		window.addEventListener('keyup', function (e) {
+			if (e.key === 'Shift') setPanReady(false);
+		});
+		/* Leaving the window while holding Shift never delivers the keyup, which
+		   would otherwise strand the cursor as a grab hand. */
+		window.addEventListener('blur', function () { setPanReady(false); });
+	}
+
 	/* -------------------------------------------------------- critical path */
 
 	function syncCriticalButton() {
@@ -2633,6 +2497,7 @@
 		svg.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
 		document.addEventListener('keydown', onKeyDown);
+		watchPanModifier();
 
 		window.addEventListener('resize', function () {
 			zoomControls.classList.toggle('is-lifted', !!selection && isSheet());
