@@ -37,3 +37,17 @@ tr:nth-child(even) {background-color: #f2f2f2;}
 #igorScore {
   color: #AF0000;
 }
+
+/* Lines below: thinner menu icon. Replaces the fa-bars glyph with the same three
+   bars at half the thickness, keeping the glyph's box so the button size is unchanged */
+
+.offcanvas-toggle .fa-bars::before {
+  content: "";
+  display: inline-block;
+  width: 0.857143em; /* 1536/1792: the glyph's advance width */
+  height: 1em;
+  vertical-align: -0.142857em; /* 256/1792: the font's descent */
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1536 1792'%3E%3Crect y='320' width='1536' height='128' rx='32'/%3E%3Crect y='832' width='1536' height='128' rx='32'/%3E%3Crect y='1344' width='1536' height='128' rx='32'/%3E%3C/svg%3E") no-repeat center / 100% 100%;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1536 1792'%3E%3Crect y='320' width='1536' height='128' rx='32'/%3E%3Crect y='832' width='1536' height='128' rx='32'/%3E%3Crect y='1344' width='1536' height='128' rx='32'/%3E%3C/svg%3E") no-repeat center / 100% 100%;
+}
