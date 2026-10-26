@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<title>Branch predictor lab</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<!-- Unlisted page: not linked from the site, not in sitemap.xml, and kept out of
+		     search results. (Deliberately not in robots.txt, which would advertise the path
+		     and stop crawlers from ever seeing this noindex.) -->
+		<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+		<meta name="googlebot" content="noindex, nofollow">
+		<meta name="referrer" content="no-referrer">
+
+		<link rel="preconnect" href="https://fonts.googleapis.com">
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+		<link href="https://fonts.googleapis.com/css?family=Open+Sans:400,600,700|Playfair+Display:400,700" rel="stylesheet">
+		<link rel="stylesheet" href="css/bp.css">
+
+		<!-- Apply the saved theme before first paint (see petriplan.html). -->
+		<script>
+			(function () {
+				try {
+					var t = localStorage.getItem('bp:theme');
+					if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+				} catch (e) { /* storage unavailable: follow the OS */ }
+			})();
+		</script>
+
+		<link rel="shortcut icon" href="./img/favicon.ico" type="image/x-icon">
+		<link rel="icon" href="./img/favicon.ico" type="image/x-icon">
+	</head>
+	<body>
+		<noscript>
+			<div class="noscript">
+				<h2>Branch predictor lab</h2>
+				<p>This page is an interactive simulator and needs JavaScript.</p>
+				<p><a href="index.html">&larr; Back to the site</a></p>
+			</div>
+		</noscript>
+
+		<!-- Shared SVG definitions: arrowheads per wire kind, wrong-path hatching. -->
+		<svg class="svg-defs" width="0" height="0" aria-hidden="true" focusable="false">
+			<defs>
+				<marker id="bpm-ink" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="mk-ink"/></marker>
+				<marker id="bpm-rd" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="mk-rd"/></marker>
+				<marker id="bpm-up" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="mk-up"/></marker>
+				<marker id="bpm-rx" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="mk-rx"/></marker>
+				<marker id="bpm-dr" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="mk-dr"/></marker>
+				<pattern id="bp-hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+					<line x1="0" y1="0" x2="0" y2="7" class="hatch-line"/>
+				</pattern>
+			</defs>
+		</svg>
+
+		<header class="app-bar">
+			<a href="index.html" class="home-link" title="Back to the site" aria-label="Back to the site">&#8592;</a>
+			<span class="brand">Branch predictor lab</span>
+			<label class="sr-only" for="bpSel">Branch predictor</label>
+			<select id="bpSel" class="sel"></select>
+			<span class="bar-sep" aria-hidden="true"></span>
+			<button type="button" class="btn btn-primary" id="btnCompile" title="Compile the source (Ctrl+Enter)">Compile</button>
+			<button type="button" class="btn" id="btnStep" title="Advance one cycle (Space or S)">Step</button>
+			<button type="button" class="btn btn-toggle" id="btnPlay" aria-pressed="false" title="Play or pause (P)">Play</button>
+			<button type="button" class="btn" id="btnRun" title="Run to the end at full speed (E)">Run to end</button>
+			<button type="button" class="btn" id="btnReset" title="Restart the program with the current settings (R)">Reset</button>
+			<label class="bar-field">Speed <select id="speedSel" class="sel sel-sm"></select></label>
+			<span class="bar-spacer"></span>
+			<button type="button" class="btn btn-icon" id="btnTheme" title="Switch theme" aria-label="Switch theme"><span id="themeIco" aria-hidden="true">&#9728;</span></button>
+			<button type="button" class="btn btn-icon" id="btnHelp" title="How this works (?)" aria-label="Help">?</button>
+		</header>
+
+		<section class="knob-bar" aria-label="Configuration">
+			<div class="knob-group">
+				<span class="kg-title" id="bpKnobTitle">BP</span>
+				<div class="knobs" id="bpKnobs"></div>
+			</div>
+			<div class="knob-group">
+				<span class="kg-title">Front-end</span>
+				<div class="knobs" id="feKnobs"></div>
+			</div>
+			<div class="budget" id="budget"></div>
+		</section>
+
+		<main class="lab">
+			<div class="col-main">
+				<section class="panel">
+					<header class="panel-h"><h2>CPU front-end</h2><span class="panel-meta" id="cycleMeta"></span></header>
+					<div class="fig" id="feFig"></div>
+					<div class="legend">
+						<span><i class="ln" style="border-color:var(--w-rd)"></i>prediction</span>
+						<span><i class="ln dash" style="border-color:var(--w-up)"></i>predictor update</span>
+						<span><i class="ln" style="border-color:var(--w-rx)"></i>Execute redirect</span>
+						<span><i class="ln" style="border-color:var(--w-dr)"></i>Decode redirect (BTB miss)</span>
+						<span><i class="hat"></i>wrong path</span>
+					</div>
+				</section>
+
+				<section class="panel">
+					<header class="panel-h"><h2 id="bpTitle">Direction predictor</h2><span class="panel-meta" id="bpMeta"></span></header>
+					<div class="fig" id="bpFig"></div>
+					<div class="legend">
+						<span class="stress">table stress <i style="background:var(--h0)"></i><i style="background:var(--h1)"></i><i style="background:var(--h2)"></i><i style="background:var(--h3)"></i><i style="background:var(--h4)"></i></span>
+						<span>relaxed &rarr; thrashing &middot; pale fill: the table &middot; solid: entry read this cycle &middot; purple dashes: entry written at resolve</span>
+					</div>
+					<p class="about" id="bpAbout"></p>
+				</section>
+
+				<div class="split">
+					<section class="panel">
+						<header class="panel-h"><h2>Event log</h2><span class="panel-meta" id="logMeta"></span></header>
+						<div class="log" id="log" aria-live="off"></div>
+					</section>
+					<section class="panel">
+						<header class="panel-h"><h2>Stats</h2></header>
+						<div id="stats"></div>
+					</section>
+				</div>
+
+				<section class="panel">
+					<header class="panel-h"><h2>Per branch</h2></header>
+					<div class="table-wrap" id="perBranch"></div>
+				</section>
+
+				<section class="panel">
+					<header class="panel-h"><h2>Runs</h2><button type="button" class="btn btn-small" id="btnClearRuns">Clear</button></header>
+					<div class="table-wrap" id="runs"></div>
+				</section>
+			</div>
+
+			<div class="col-code">
+				<section class="panel">
+					<header class="panel-h"><h2>Source</h2><label class="sr-only" for="exampleSel">Load an example</label><select id="exampleSel" class="sel"></select></header>
+					<div class="editor">
+						<div class="gutter" id="gutter" aria-hidden="true"></div>
+						<div class="ed">
+							<div id="edHl" aria-hidden="true"></div>
+							<label class="sr-only" for="src">Source code</label>
+							<textarea id="src" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off"></textarea>
+						</div>
+					</div>
+				</section>
+				<section class="panel">
+					<header class="panel-h"><h2>Assembly</h2><span class="panel-meta" id="asmMeta"></span></header>
+					<div class="asm" id="asm"></div>
+				</section>
+			</div>
+		</main>
+
+		<footer class="status-bar">
+			<span class="status-msg" id="status">Loading&hellip;</span>
+			<span class="status-credit">after S. Mittal, <a href="https://arxiv.org/abs/1804.00261" target="_blank" rel="noopener">A Survey of Techniques for Dynamic Branch Prediction</a></span>
+		</footer>
+
+		<div class="modal" id="helpModal" hidden>
+			<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+				<button type="button" class="modal-x" id="helpX" aria-label="Close">&#10005;</button>
+				<h1 id="helpTitle">Branch predictor lab</h1>
+				<p class="modal-sub">A cycle-level model of an in-order front-end driving the direction predictors of
+				Sections III and III-A of Mittal's survey (<a href="https://arxiv.org/abs/1804.00261" target="_blank" rel="noopener">arXiv:1804.00261</a>),
+				each drawn in the notation of its figure in the paper.</p>
+
+				<h3>Using it</h3>
+				<ul>
+					<li>Write C on the right (or load an example) and press <b>Compile</b>. Conditional branches get labels
+					(B0, B1, &hellip;) that the gutter, the assembly, the log, the figures and the per-branch table all share.</li>
+					<li><b>Step</b> advances one cycle. <b>Play</b> runs at the chosen speed; up to 16 cycles/s every cycle is
+					animated and logged. <b>Run to end</b> goes flat out.</li>
+					<li>Changing the predictor or any knob restarts the program. Each run lands in <b>Runs</b>, so the same code
+					can be compared across predictors and sizes. Data from <code>rand()</code> is seeded identically every run.</li>
+				</ul>
+
+				<h3>Reading the figures</h3>
+				<ul>
+					<li>Tables are drawn as in the paper: a few rows, a dashed gap and the last row. They never show contents.
+					The <b>fill colour</b> is the table's stress, from blue (relaxed) and green (healthy) through yellow and orange to red (thrashing).</li>
+					<li>The <b>solid</b> entry is the one read for the prediction made this cycle; the <b>purple dashed</b>
+					entry is the one trained by the branch that resolved this cycle. These are usually different branch instances.</li>
+					<li>Wires: blue carries the prediction, purple dashes the update from Execute, red the Execute redirect after a
+					mispredict, orange a Decode redirect after a BTB miss. Faded wires carried nothing this cycle.</li>
+					<li>Hatched pipeline stages hold wrong-path instructions: fetched after a branch that is going to turn out mispredicted.</li>
+				</ul>
+
+				<h3>How stress and aliasing are measured</h3>
+				<p>The modelled tables are tag-less, like the paper's, so hardware could not tell who collided. The simulator keeps a
+				shadow owner per entry (the branch, or for per-set tables the code block, that last wrote it) purely to report it:</p>
+				<ul>
+					<li>History tables: share of lookups landing on a row last written by another owner (for tagged tables: evicting it).</li>
+					<li>Pattern tables: every branch also trains a private copy of each counter it uses (again a shadow, not hardware).
+					Interference is <b>destructive</b> when the shared counter mispredicted but the private one would have been right, and
+					<b>constructive</b> the other way round (the survey's negative and positive aliasing, Section II-A). The colour follows the
+					destructive rate, so a heavily shared global PHT can still be healthy.</li>
+				</ul>
+
+				<h3>The front-end</h3>
+				<ul>
+					<li>In order, one instruction per cycle; branches resolve in the last stage, so a mispredict costs depth &minus; 1 cycles.</li>
+					<li>A predicted-taken branch needs its target from the BTB; a BTB miss is repaired at Decode (2 cycles).</li>
+					<li>Predictors that read two tables in series (the P and S variants, MAs in Fig. 5(a)) take two cycles, so each
+					predicted-taken branch costs one fetch bubble. Fig. 5(b) removes it.</li>
+					<li>History is updated speculatively at fetch and repaired on a flush, or (knob) only at resolve.</li>
+				</ul>
+
+				<h3>Language</h3>
+				<p><code>int</code> variables and arrays, <code>if</code>/<code>else</code>, <code>for</code>, <code>while</code>,
+				<code>do</code>/<code>while</code>, <code>break</code>, <code>continue</code>, <code>?:</code>, <code>&amp;&amp;</code>
+				and <code>||</code> (each a real branch), arithmetic, bitwise and comparison operators, and
+				<code>rand(lo, hi)</code> (also as an array initialiser). Loops are compiled test-at-the-bottom, as gcc does.
+				No function calls: calls and returns need target prediction, which the survey leaves out.</p>
+
+				<h3>Keyboard</h3>
+				<ul>
+					<li><kbd>Space</kbd> or <kbd>S</kbd> step &middot; <kbd>P</kbd> play/pause &middot; <kbd>E</kbd> run to end &middot;
+					<kbd>R</kbd> reset &middot; <kbd>Ctrl</kbd>+<kbd>Enter</kbd> compile &middot; <kbd>?</kbd> this help</li>
+				</ul>
+
+				<div class="modal-foot">
+					<button type="button" class="btn btn-primary" id="helpClose">Got it</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- If the app never starts, say why instead of sitting on "Loading…". -->
+		<script>
+			(function () {
+				function report(msg) {
+					var s = document.getElementById('status');
+					if (s) { s.textContent = msg; s.className = 'status-msg st-bad'; }
+				}
+				window.addEventListener('error', function (e) {
+					report('Error: ' + e.message + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : ''));
+				});
+				window.addEventListener('load', function () {
+					if (!window.BP || !window.BP.started) report('The simulator did not start: one of its scripts failed to load (see the browser console).');
+				});
+			})();
+		</script>
+
+		<!-- Plain scripts (no modules), so the page also works when opened straight from disk.
+		     Order matters: each file reads what the ones above it put on window.BP. -->
+		<script src="js/bp/compiler.js" defer></script>
+		<script src="js/bp/machine.js" defer></script>
+		<script src="js/bp/predictors/base.js" defer></script>
+		<script src="js/bp/svg.js" defer></script>
+		<script src="js/bp/predictors/figure.js" defer></script>
+		<script src="js/bp/predictors/bimodal.js" defer></script>
+		<script src="js/bp/predictors/twolevel.js" defer></script>
+		<script src="js/bp/predictors/alloyed.js" defer></script>
+		<script src="js/bp/predictors/correlation.js" defer></script>
+		<script src="js/bp/predictors/index.js" defer></script>
+		<script src="js/bp/core.js" defer></script>
+		<script src="js/bp/frontend-figure.js" defer></script>
+		<script src="js/bp/examples.js" defer></script>
+		<script src="js/bp/main.js" defer></script>
+	</body>
+</html>
