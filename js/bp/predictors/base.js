@@ -26,7 +26,9 @@
 		// Fraction of lookups in a tagged table that had to evict another branch's entry.
 		evict: [0.004, 0.015, 0.05, 0.15],
 		// Fraction of resolved branches that aliasing turned from right to wrong (see CounterTable).
-		destructive: [0.002, 0.006, 0.015, 0.04]
+		destructive: [0.002, 0.006, 0.015, 0.04],
+		// Fraction of TAGE allocations that found this table's candidate entry still useful.
+		alloc: [0.1, 0.25, 0.45, 0.7]
 	};
 
 	const ALPHA = 1 / 256;   // EWMA weight: roughly the last few hundred events
@@ -176,13 +178,15 @@
 	// trains a private copy of each counter it uses (a shadow, not hardware). Aliasing was
 	// destructive when the shared counter was wrong but the private one would have been
 	// right, and constructive in the opposite case (survey, Section II-A).
+	// init: starting value of every counter (default: weakly taken).
 	class CounterTable extends TableStats {
-		constructor(entries, bits, name, th) {
+		constructor(entries, bits, name, th, init) {
 			super(name, entries, 'destructive', th);
 			this.bits = bits;
 			this.max = (1 << bits) - 1;
 			this.half = 1 << (bits - 1);
-			this.ctr = new Uint8Array(entries).fill(this.half);   // weakly taken
+			this.init = init === undefined ? this.half : init;
+			this.ctr = new Uint8Array(entries).fill(this.init);
 			this.owner = new Int32Array(entries).fill(-1);
 			this.priv = new Map();
 		}
@@ -193,8 +197,8 @@
 			this.noteLookup(alias);
 			const v = this.ctr[i];
 			const pk = br * this.size + i;
-			const pv = this.priv.has(pk) ? this.priv.get(pk) : this.half;
-			return { v: v, taken: v >= this.half, alias: alias, prev: o, privTaken: pv >= this.half };
+			const pv = this.priv.has(pk) ? this.priv.get(pk) : this.init;
+			return { v: v, taken: v >= this.half, alias: alias, prev: o, privTaken: pv >= this.half, pv: pv };
 		}
 
 		train(i, taken, br) {
@@ -204,7 +208,7 @@
 			this.owner[i] = br;
 			this.touch(i);
 			const pk = br * this.size + i;
-			let pv = this.priv.has(pk) ? this.priv.get(pk) : this.half;
+			let pv = this.priv.has(pk) ? this.priv.get(pk) : this.init;
 			if (taken) { if (pv < this.max) pv++; } else if (pv > 0) pv--;
 			this.priv.set(pk, pv);
 			return v;
@@ -223,6 +227,9 @@
 		}
 
 		fmt(v) { return bin(v, this.bits); }
+
+		// Two's-complement view of a counter, for predictors that add counters up (GEHL).
+		signed(v) { return v - this.half; }
 	}
 
 	/* ------------------------------------------------- branch history tables */
@@ -321,6 +328,75 @@
 		restore(_slot, old) { this.v = old; }
 	}
 
+	// Global history hundreds of bits long (GEHL, TAGE): a circular bit buffer, plus folded
+	// copies that compress the newest L bits into W (Seznec's circular shift registers).
+	// A fold's bit j is the XOR of history bits j, j + W, j + 2W, ... below L, and each shift
+	// updates it in O(1). v keeps the newest 31 bits for display.
+	class LongHistory {
+		constructor(maxBits, name) {
+			let size = 1024;
+			while (size < maxBits + 1024) size <<= 1;   // room for speculative shifts past the longest window
+			this.size = size;
+			this.max = maxBits;
+			this.name = name || 'GHR';
+			this.buf = new Uint8Array(size);
+			this.ptr = 0;
+			this.v = 0;
+			this.folds = [];
+		}
+
+		// i-th most recent outcome (0 = newest).
+		bit(i) { return this.buf[(this.ptr + i) & (this.size - 1)]; }
+
+		addFold(L, W) {
+			const f = { L: L, W: W, mask: W >= 31 ? 0x7FFFFFFF : (1 << W) - 1, comp: 0 };
+			this.folds.push(f);
+			return f;
+		}
+
+		shift(bit, undo, seq) {
+			if (undo) undo.push(seq, this, 0, { ptr: this.ptr, v: this.v, f: this.folds.map(function (f) { return f.comp; }) });
+			this.ptr = (this.ptr - 1) & (this.size - 1);
+			this.buf[this.ptr] = bit;
+			this.v = ((this.v << 1) | bit) & 0x7FFFFFFF;
+			for (let i = 0; i < this.folds.length; i++) {
+				const f = this.folds[i];
+				if (!f.L) continue;
+				let c = (f.comp << 1) | bit;
+				c ^= this.bit(f.L) << (f.L % f.W);
+				c ^= c >>> f.W;
+				f.comp = c & f.mask;
+			}
+			return this.v;
+		}
+
+		// Restoring the pointer is enough for the bits: shifts only ever write newer positions.
+		restore(_slot, old) {
+			this.ptr = old.ptr;
+			this.v = old.v;
+			for (let i = 0; i < old.f.length; i++) this.folds[i].comp = old.f[i];
+		}
+
+		// Newest n bits as a string, newest on the right (as a shift register is drawn).
+		text(n) {
+			let s = '';
+			for (let i = n - 1; i >= 0; i--) s += this.bit(i);
+			return s;
+		}
+	}
+
+	// History lengths L(1..n) in a geometric series, L(i) = floor(alpha^(i-1) * L(1) + 0.5),
+	// nudged up where rounding would repeat a length (survey Table IV).
+	function geometric(n, L1, alpha) {
+		const L = [];
+		for (let i = 1; i <= n; i++) {
+			let v = Math.floor(Math.pow(alpha, i - 1) * L1 + 0.5);
+			if (L.length && v <= L[L.length - 1]) v = L[L.length - 1] + 1;
+			L.push(v);
+		}
+		return L;
+	}
+
 	/* -------------------------------------------------------------- predictor */
 
 	// Contract for concrete predictors:
@@ -381,6 +457,6 @@
 		}
 	}
 
-	BP.base = { STRESS_NAMES, TH, levelOf, log2, hex, bin, binShort, pcField, fmtBytes, brName, interferenceText, UndoLog, TableStats, CounterTable, HistoryTable, GlobalHistory, Predictor };
+	BP.base = { STRESS_NAMES, TH, ALPHA, WARM, levelOf, log2, hex, bin, binShort, pcField, fmtBytes, brName, interferenceText, UndoLog, TableStats, CounterTable, HistoryTable, GlobalHistory, LongHistory, geometric, Predictor };
 
 })(window.BP = window.BP || {});

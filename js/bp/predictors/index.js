@@ -17,8 +17,15 @@
 	const { TWO_LEVEL } = BP.twolevel;
 	const { ALLOYED } = BP.alloyed;
 	const { CORRELATION } = BP.correlation;
+	const { GSELECT, GSHARE } = BP.mcfarling;
+	const { GSKEW } = BP.skewed;
+	const { BIMODE } = BP.bimode;
+	const { AGREE } = BP.agree;
+	const { GEHL } = BP.gehl;
+	const { TAGE } = BP.tage;
 
-	const PREDICTORS = [BIMODAL].concat(TWO_LEVEL, [ALLOYED, CORRELATION]);
+	// In survey order: Section III baseline, III-A, III-B, III-C, III-D, III-E.
+	const PREDICTORS = [BIMODAL].concat(TWO_LEVEL, [ALLOYED, CORRELATION, GSELECT, GSHARE, GSKEW, BIMODE, AGREE, GEHL, TAGE]);
 
 	function findPredictor(id) {
 		for (let i = 0; i < PREDICTORS.length; i++) if (PREDICTORS[i].id === id) return PREDICTORS[i];

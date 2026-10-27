@@ -48,12 +48,14 @@
 		knobs: {},
 		fe: {},
 		speed: 3,
-		runs: []
+		runs: [],
+		zoom: {}
 	};
 
 	let program = null, compiledSrc = null, core = null, def = null;
 	let playing = false, runToEnd = false, rafId = 0, lastT = 0, acc = 0, recorded = false;
 	let asmRows = [], marked = [];
+	let zooms = null;
 
 	/* ------------------------------------------------------------- storage */
 
@@ -61,13 +63,14 @@
 		try {
 			const s = JSON.parse(localStorage.getItem(STATE_KEY) || 'null');
 			if (s && typeof s === 'object') {
-				['src', 'example', 'bpId', 'knobs', 'fe', 'speed', 'runs'].forEach(function (k) { if (s[k] !== undefined) state[k] = s[k]; });
+				['src', 'example', 'bpId', 'knobs', 'fe', 'speed', 'runs', 'zoom'].forEach(function (k) { if (s[k] !== undefined) state[k] = s[k]; });
 			}
 		} catch (e) { /* private mode, blocked storage: defaults are fine */ }
 		if (!findPredictor(state.bpId)) state.bpId = 'PAg';
 		if (!(state.speed >= 0 && state.speed < SPEEDS.length)) state.speed = 3;
 		if (!Array.isArray(state.runs)) state.runs = [];
 		if (!state.knobs || typeof state.knobs !== 'object') state.knobs = {};
+		if (!state.zoom || typeof state.zoom !== 'object') state.zoom = {};
 	}
 
 	let saveTimer = 0;
@@ -122,11 +125,14 @@
 		return Number(v).toLocaleString() + (kn.unit ? ' ' + kn.unit : '');
 	}
 
+	// Knobs moved away from their default are highlighted, and every knob's tooltip names its default.
 	function buildKnobs(container, list, values, onChange) {
 		container.innerHTML = '';
 		list.forEach(function (kn) {
 			const wrap = el('label', 'knob');
-			if (kn.help) wrap.title = kn.help;
+			wrap.title = (kn.help ? kn.help + ' ' : '') + 'Default: ' + knobValueText(kn, kn.def) + '.';
+			const mark = function () { wrap.classList.toggle('knob-changed', values[kn.id] !== kn.def); };
+			mark();
 			wrap.appendChild(el('span', 'knob-l', kn.label));
 			if (kn.type === 'choice') {
 				const sel = el('select', 'sel sel-sm');
@@ -140,6 +146,7 @@
 				sel.addEventListener('change', function () {
 					const o = kn.options[sel.selectedIndex];
 					values[kn.id] = typeof o === 'object' ? o.v : o;
+					mark();
 					onChange();
 				});
 				wrap.appendChild(sel);
@@ -156,6 +163,7 @@
 					const v = pow ? Math.pow(2, Number(r.value)) : Number(r.value);
 					values[kn.id] = v;
 					out.textContent = knobValueText(kn, v);
+					mark();
 					onChange();
 				});
 				wrap.appendChild(r);
@@ -165,7 +173,27 @@
 		});
 	}
 
+	function atDefaults(list, values) {
+		return list.every(function (kn) { return values[kn.id] === kn.def; });
+	}
+
+	function updateDefaultsButton() {
+		$('btnBpDefaults').disabled = atDefaults(def.knobs, knobsFor(def));
+	}
+
+	// Put the selected predictor's knobs back where they started. The widgets edit this
+	// object directly, so it is reset in place and the widgets rebuilt from it.
+	function restoreDefaults() {
+		const k = knobsFor(def);
+		def.knobs.forEach(function (kn) { k[kn.id] = kn.def; });
+		buildKnobs($('bpKnobs'), def.knobs, k, onKnobChange);
+		updateDefaultsButton();
+		save();
+		resetCore(def.name + ' knobs back to defaults');
+	}
+
 	function onKnobChange() {
+		updateDefaultsButton();
 		save();
 		resetCore('knobs changed');
 	}
@@ -188,6 +216,7 @@
 		sel.value = state.bpId;
 		sel.addEventListener('change', function () {
 			state.bpId = sel.value;
+			zooms.bp.resetPan();
 			save();
 			selectPredictor();
 			resetCore('predictor changed');
@@ -228,8 +257,118 @@
 		const k = knobsFor(def);
 		$('bpKnobTitle').textContent = def.name;
 		buildKnobs($('bpKnobs'), def.knobs, k, onKnobChange);
+		updateDefaultsButton();
 		$('bpTitle').textContent = 'Direction predictor · ' + def.name + ' (' + def.figure + ')';
 		$('bpAbout').textContent = def.about;
+	}
+
+	/* ----------------------------------------------------------- zoom, pan */
+
+	// Each figure sits in a clipping viewport. The figure element keeps its zoom and pan while
+	// the SVG inside it is replaced every cycle: it is sized to zoom x the fitted width and
+	// shifted by the pan offset. Zooming out shrinks the viewport with the figure; zooming in
+	// keeps the fitted height and the figure is dragged around inside it. The fitted width is
+	// never below MIN_W, so on a phone the figure pans sideways rather than shrinking its text.
+	const ZOOM_MIN = 0.5, ZOOM_MAX = 4, ZOOM_STEP = 1.25, MIN_W = 560;
+
+	function clampZoom(k) { return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(k) || 1)); }
+
+	function makeZoom(key, view, fig, label) {
+		let k = clampZoom(state.zoom[key]), x = 0, y = 0, g = null, drag = null;
+
+		// Geometry of the current SVG at zoom k: figure size and the viewport height it needs.
+		function measure() {
+			const svg = fig.querySelector('svg');
+			const vb = svg && svg.viewBox && svg.viewBox.baseVal;
+			if (!vb || !vb.width) return null;
+			const vw = view.clientWidth, base = Math.max(vw, MIN_W), ar = vb.height / vb.width;
+			const fw = base * k, fh = fw * ar;
+			return { vw: vw, fw: fw, fh: fh, vh: Math.min(fh, base * ar) };
+		}
+
+		function apply() {
+			g = measure();
+			label.textContent = Math.round(k * 100) + '%';
+			if (!g) {   // nothing drawn yet: plain layout
+				fig.style.width = fig.style.transform = view.style.height = '';
+				view.classList.remove('pannable', 'pan-x');
+				return;
+			}
+			x = Math.min(Math.max(0, x), Math.max(0, g.fw - g.vw));
+			y = Math.min(Math.max(0, y), Math.max(0, g.fh - g.vh));
+			const panX = g.fw > g.vw + 0.5, panY = g.fh > g.vh + 0.5;
+			fig.style.width = g.fw + 'px';
+			fig.style.transform = 'translate(' + (panX ? -x : (g.vw - g.fw) / 2) + 'px,' + (-y) + 'px)';
+			view.style.height = g.vh + 'px';
+			view.classList.toggle('pannable', panX || panY);
+			view.classList.toggle('pan-x', panX && !panY);
+		}
+
+		// Zoom to nk, keeping the figure point under (cx, cy) (viewport pixels) where it is.
+		function set(nk, cx, cy) {
+			nk = clampZoom(nk);
+			if (g) {
+				if (cx === undefined) { cx = g.vw / 2; cy = g.vh / 2; }
+				const left = g.fw > g.vw ? -x : (g.vw - g.fw) / 2;
+				const r = nk / k;
+				x = (cx - left) * r - cx;
+				y = (cy + y) * r - cy;
+			}
+			k = nk;
+			state.zoom[key] = k;
+			save();
+			apply();
+		}
+
+		function fit() { x = y = 0; set(1); }
+
+		view.addEventListener('pointerdown', function (e) {
+			if (e.button !== 0 || !view.classList.contains('pannable')) return;
+			if (e.pointerType === 'mouse') e.preventDefault();   // no text selection while dragging
+			drag = { id: e.pointerId, sx: e.clientX, sy: e.clientY, x: x, y: y };
+			try { view.setPointerCapture(e.pointerId); } catch (err) { /* pointer already gone */ }
+			view.classList.add('dragging');
+		});
+		view.addEventListener('pointermove', function (e) {
+			if (!drag || e.pointerId !== drag.id) return;
+			x = drag.x - (e.clientX - drag.sx);
+			y = drag.y - (e.clientY - drag.sy);
+			apply();
+		});
+		const end = function (e) {
+			if (drag && e.pointerId === drag.id) { drag = null; view.classList.remove('dragging'); }
+		};
+		view.addEventListener('pointerup', end);
+		view.addEventListener('pointercancel', end);
+		// Ctrl + scroll (and a trackpad pinch, which arrives as one) zooms; plain scrolling still scrolls the page.
+		view.addEventListener('wheel', function (e) {
+			if (!(e.ctrlKey || e.metaKey) || !g) return;
+			e.preventDefault();
+			const r = view.getBoundingClientRect();
+			const d = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+			set(k * Math.exp(-d * 0.0025), e.clientX - r.left, e.clientY - r.top);
+		}, { passive: false });
+		view.addEventListener('dblclick', fit);
+
+		return {
+			apply: apply,
+			fit: fit,
+			zoomBy: function (f) { set(k * f); },
+			resetPan: function () { x = y = 0; }
+		};
+	}
+
+	function setupZoom() {
+		zooms = {
+			fe: makeZoom('fe', $('feView'), $('feFig'), $('feZoomFit')),
+			bp: makeZoom('bp', $('bpView'), $('bpFig'), $('bpZoomFit'))
+		};
+		['fe', 'bp'].forEach(function (z) {
+			$(z + 'ZoomOut').addEventListener('click', function () { zooms[z].zoomBy(1 / ZOOM_STEP); });
+			$(z + 'ZoomIn').addEventListener('click', function () { zooms[z].zoomBy(ZOOM_STEP); });
+			$(z + 'ZoomFit').addEventListener('click', function () { zooms[z].fit(); });
+		});
+		window.addEventListener('resize', function () { zooms.fe.apply(); zooms.bp.apply(); });
 	}
 
 	/* --------------------------------------------------------------- compile */
@@ -525,6 +664,8 @@
 			$('cycleMeta').textContent = '';
 			$('bpMeta').textContent = '';
 		}
+		zooms.fe.apply();
+		zooms.bp.apply();
 	}
 
 	let logRows = 0;
@@ -677,6 +818,7 @@
 
 	function init() {
 		load();
+		setupZoom();
 		buildMenus();
 		selectPredictor();
 		$('src').value = state.src;
@@ -700,6 +842,7 @@
 		$('btnRun').addEventListener('click', function () { play(true); });
 		$('btnReset').addEventListener('click', function () { resetCore('reset'); });
 		$('btnClearRuns').addEventListener('click', function () { state.runs = []; save(); renderRuns(); });
+		$('btnBpDefaults').addEventListener('click', restoreDefaults);
 		$('btnTheme').addEventListener('click', toggleTheme);
 		$('btnHelp').addEventListener('click', function () { $('helpModal').hidden = false; $('helpClose').focus({ preventScroll: true }); });
 		$('helpClose').addEventListener('click', function () { $('helpModal').hidden = true; });

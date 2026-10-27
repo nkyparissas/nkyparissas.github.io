@@ -40,19 +40,21 @@ for (int i = 0; i < 1000; i++) {
 		},
 		{
 			name: 'Correlated branches (Fig. 6a)',
-			src: `// Pan et al., Fig. 6(a): B3 is decided by B1 and B2.
-// p and q start as 1 or 2; after B1 and B2, p != q exactly
-// when one of them was 2. A (2,2) correlation predictor or a
-// global-history predictor learns B3; 2bc is a coin toss.
+			src: `// Pan et al., Fig. 6(a): the third test is decided by the
+// first two. p and q start as 1 or 2; after the first two tests,
+// p != q exactly when one of them was 2. A (2,2) correlation
+// predictor or a global-history predictor learns the third test;
+// 2bc is a coin toss. (The paper calls the tests B1, B2, B3; here
+// they are labelled B0, B1, B2.)
 int hits = 0;
 for (int n = 0; n < 2000; n++) {
     int p = rand(1, 2);
     int q = rand(1, 2);
-    if (p == 2)        // B1
+    if (p == 2)        // the paper's B1
         p = 0;
-    if (q == 2)        // B2
+    if (q == 2)        // the paper's B2
         q = 0;
-    if (p != q)        // B3
+    if (p != q)        // the paper's B3
         hits++;
 }
 `
@@ -76,6 +78,43 @@ for (int i = 0; i < 2000; i++) {
     if (i % 11 == 0) x--;
     if (i % 12 == 0) x--;
     if (i % 13 == 0) x--;
+}
+`
+		},
+		{
+			name: 'Opposite biases (bi-mode, agree, Sec. III-D)',
+			src: `// Six strongly biased branches, some almost always taken and
+// some almost never, all driven by one random value. When they
+// share counters in a small table, opposite biases fight (gshare).
+// Bi-mode sends them to different PHTs; agree makes them all
+// "agree" with their own bias. Try 6 or fewer index bits.
+int x = 0;
+for (int i = 0; i < 4000; i++) {
+    int v = rand(0, 99);
+    if (v < 95) x++;
+    if (v >= 5) x--;
+    if (v < 3) x += 2;
+    if (v > 96) x -= 2;
+    if (v < 92) x++;
+    if (v > 6) x--;
+}
+`
+		},
+		{
+			name: 'Far correlation (GEHL, TAGE, Sec. III-E)',
+			src: `// The two "if (r)" test the same coin toss, with a 24-trip loop
+// (25 more branches) in between. A 10-bit history cannot reach
+// back that far, so gshare guesses; geometric history lengths
+// can. In TAGE, watch which table ends up providing the second.
+int x = 0;
+for (int n = 0; n < 3000; n++) {
+    int r = rand(0, 1);
+    if (r)
+        x++;
+    for (int j = 0; j < 24; j++)
+        x += j;
+    if (r)
+        x--;
 }
 `
 		},

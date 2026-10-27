@@ -73,6 +73,7 @@
 			<div class="knob-group">
 				<span class="kg-title" id="bpKnobTitle">BP</span>
 				<div class="knobs" id="bpKnobs"></div>
+				<button type="button" class="btn btn-defaults" id="btnBpDefaults" title="Put this predictor's knobs back to their defaults">&#8634; Defaults</button>
 			</div>
 			<div class="knob-group">
 				<span class="kg-title">Front-end</span>
@@ -84,8 +85,8 @@
 		<main class="lab">
 			<div class="col-main">
 				<section class="panel">
-					<header class="panel-h"><h2>CPU front-end</h2><span class="panel-meta" id="cycleMeta"></span></header>
-					<div class="fig" id="feFig"></div>
+					<header class="panel-h"><h2>CPU front-end</h2><span class="panel-meta" id="cycleMeta"></span><span class="zoom" role="group" aria-label="Zoom the front-end figure"><button type="button" class="btn btn-zoom" id="feZoomOut" title="Zoom out (or Ctrl + scroll)" aria-label="Zoom out">&minus;</button><button type="button" class="btn btn-zoom zoom-pct" id="feZoomFit" title="Fit to the panel (or double-click the figure)">100%</button><button type="button" class="btn btn-zoom" id="feZoomIn" title="Zoom in (or Ctrl + scroll)" aria-label="Zoom in">+</button></span></header>
+					<div class="fig-view" id="feView"><div class="fig" id="feFig"></div></div>
 					<div class="legend">
 						<span><i class="ln" style="border-color:var(--w-rd)"></i>prediction</span>
 						<span><i class="ln dash" style="border-color:var(--w-up)"></i>predictor update</span>
@@ -96,8 +97,8 @@
 				</section>
 
 				<section class="panel">
-					<header class="panel-h"><h2 id="bpTitle">Direction predictor</h2><span class="panel-meta" id="bpMeta"></span></header>
-					<div class="fig" id="bpFig"></div>
+					<header class="panel-h"><h2 id="bpTitle">Direction predictor</h2><span class="panel-meta" id="bpMeta"></span><span class="zoom" role="group" aria-label="Zoom the predictor figure"><button type="button" class="btn btn-zoom" id="bpZoomOut" title="Zoom out (or Ctrl + scroll)" aria-label="Zoom out">&minus;</button><button type="button" class="btn btn-zoom zoom-pct" id="bpZoomFit" title="Fit to the panel (or double-click the figure)">100%</button><button type="button" class="btn btn-zoom" id="bpZoomIn" title="Zoom in (or Ctrl + scroll)" aria-label="Zoom in">+</button></span></header>
+					<div class="fig-view" id="bpView"><div class="fig" id="bpFig"></div></div>
 					<div class="legend">
 						<span class="stress">table stress <i style="background:var(--h0)"></i><i style="background:var(--h1)"></i><i style="background:var(--h2)"></i><i style="background:var(--h3)"></i><i style="background:var(--h4)"></i></span>
 						<span>relaxed &rarr; thrashing &middot; pale fill: the table &middot; solid: entry read this cycle &middot; purple dashes: entry written at resolve</span>
@@ -156,8 +157,9 @@
 				<button type="button" class="modal-x" id="helpX" aria-label="Close">&#10005;</button>
 				<h1 id="helpTitle">Branch predictor lab</h1>
 				<p class="modal-sub">A cycle-level model of an in-order front-end driving the direction predictors of
-				Sections III and III-A of Mittal's survey (<a href="https://arxiv.org/abs/1804.00261" target="_blank" rel="noopener">arXiv:1804.00261</a>),
-				each drawn in the notation of its figure in the paper.</p>
+				Section III (III-A to III-E) of Mittal's survey (<a href="https://arxiv.org/abs/1804.00261" target="_blank" rel="noopener">arXiv:1804.00261</a>),
+				each drawn in the notation of its figure in the paper. gselect, gshare, gskew and GEHL have no figure there,
+				so they borrow the notation of the others.</p>
 
 				<h3>Using it</h3>
 				<ul>
@@ -165,6 +167,8 @@
 					(B0, B1, &hellip;) that the gutter, the assembly, the log, the figures and the per-branch table all share.</li>
 					<li><b>Step</b> advances one cycle. <b>Play</b> runs at the chosen speed; up to 16 cycles/s every cycle is
 					animated and logged. <b>Run to end</b> goes flat out.</li>
+					<li>Knobs you have moved show their value in red; hover any knob to see its default. <b>Defaults</b> puts all of the
+					selected predictor's knobs back (it is greyed out while they already are).</li>
 					<li>Changing the predictor or any knob restarts the program. Each run lands in <b>Runs</b>, so the same code
 					can be compared across predictors and sizes. Data from <code>rand()</code> is seeded identically every run.</li>
 				</ul>
@@ -178,6 +182,8 @@
 					<li>Wires: blue carries the prediction, purple dashes the update from Execute, red the Execute redirect after a
 					mispredict, orange a Decode redirect after a BTB miss. Faded wires carried nothing this cycle.</li>
 					<li>Hatched pipeline stages hold wrong-path instructions: fetched after a branch that is going to turn out mispredicted.</li>
+					<li>Zoom either figure with the &minus; and + buttons beside its title, or Ctrl + scroll (pinch on a trackpad) over it.
+					Zoomed in, drag the figure to pan. Double-click it, or click the percentage, to fit it to the panel again.</li>
 				</ul>
 
 				<h3>How stress and aliasing are measured</h3>
@@ -189,6 +195,11 @@
 					Interference is <b>destructive</b> when the shared counter mispredicted but the private one would have been right, and
 					<b>constructive</b> the other way round (the survey's negative and positive aliasing, Section II-A). The colour follows the
 					destructive rate, so a heavily shared global PHT can still be healthy.</li>
+					<li>Where no single counter decides (GEHL's sum, gskew's vote), a table's sharing counts as destructive only if the
+					branch's private counter in its place would have turned a wrong sum or vote into a right one.</li>
+					<li>TAGE's tables are tagged, so the shadow owner exposes false tag hits. A tagged table's colour is the worse of two
+					signals: false hits that cost a prediction, and allocation pressure (mispredictions that found its entry still useful).
+					Agree's biasing bit table, like a tagged history table, counts lookups that evict another branch's bit.</li>
 				</ul>
 
 				<h3>The front-end</h3>
@@ -196,8 +207,10 @@
 					<li>In order, one instruction per cycle; branches resolve in the last stage, so a mispredict costs depth &minus; 1 cycles.</li>
 					<li>A predicted-taken branch needs its target from the BTB; a BTB miss is repaired at Decode (2 cycles).</li>
 					<li>Predictors that read two tables in series (the P and S variants, MAs in Fig. 5(a)) take two cycles, so each
-					predicted-taken branch costs one fetch bubble. Fig. 5(b) removes it.</li>
-					<li>History is updated speculatively at fetch and repaired on a flush, or (knob) only at resolve.</li>
+					predicted-taken branch costs one fetch bubble. Fig. 5(b) removes it. The III-B to III-E predictors read their tables
+					in parallel and are modelled with one-cycle lookups (GEHL and TAGE as if ahead-pipelined, as the survey notes for GEHL).</li>
+					<li>History is updated speculatively at fetch and repaired on a flush, or (knob) only at resolve. GEHL and TAGE keep
+					hundreds of history bits and fold them into each table's index and tag width; a flush restores those folds too.</li>
 				</ul>
 
 				<h3>Language</h3>
@@ -246,6 +259,12 @@
 		<script src="js/bp/predictors/twolevel.js" defer></script>
 		<script src="js/bp/predictors/alloyed.js" defer></script>
 		<script src="js/bp/predictors/correlation.js" defer></script>
+		<script src="js/bp/predictors/mcfarling.js" defer></script>
+		<script src="js/bp/predictors/skewed.js" defer></script>
+		<script src="js/bp/predictors/bimode.js" defer></script>
+		<script src="js/bp/predictors/agree.js" defer></script>
+		<script src="js/bp/predictors/gehl.js" defer></script>
+		<script src="js/bp/predictors/tage.js" defer></script>
 		<script src="js/bp/predictors/index.js" defer></script>
 		<script src="js/bp/core.js" defer></script>
 		<script src="js/bp/frontend-figure.js" defer></script>

@@ -82,10 +82,18 @@
 	}
 
 	// The shadowed name tag in the corner of each Fig. 4 panel.
+	// Approximate advance widths of the label font (15px bold Georgia): capitals are much
+	// wider than lower case, so "TAGE" needs a wider box than "gshare" per character.
+	function labelWidth(s) {
+		let w = 0;
+		for (const c of s) w += /[A-Z]/.test(c) ? 11.5 : /[a-z0-9]/.test(c) ? 8.6 : c === ' ' ? 4 : 5.5;
+		return w;
+	}
+
 	function figLabel(x, y, s) {
-		const w = Math.max(48, s.length * 9 + 18);
+		const w = Math.max(48, Math.round(labelWidth(s) + 20));
 		return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="28" class="figlabel"/>' +
-			t(x + 9, y + 20, s, 'tx figlabel-t');
+			tMid(x + w / 2, y + 20, s, 'tx figlabel-t');
 	}
 
 	function rect(x, y, w, h, cls, extra) {
@@ -200,6 +208,39 @@
 
 	function legendNote(x, y, s) { return t(x, y, s, 'dim'); }
 
-	BP.svg = { esc, svg, t, tEnd, tMid, wire, dot, tick, figLabel, rect, column, bank, reg, mux, val, legendNote };
+	// XOR gate as the survey draws it (Fig. 7): a circle with a cross.
+	function xor(cx, cy, r) {
+		return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" class="opbox"/>' +
+			'<path d="M' + (cx - r) + ',' + cy + ' L' + (cx + r) + ',' + cy + ' M' + cx + ',' + (cy - r) + ' L' + cx + ',' + (cy + r) + '" class="opline"/>';
+	}
+
+	// Grey rounded "Hash" box of Fig. 9.
+	function hashBox(x, y, w, h, label) {
+		return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="3" class="hashbox"/>' +
+			tMid(x + w / 2, y + h / 2 + 4, label, 'on-hash');
+	}
+
+	// White rounded function box ("Indexing function" in Fig. 8, the adder of GEHL, a vote).
+	function fnBox(x, y, w, h, lines, cls) {
+		let s = '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="8" class="opbox' + (cls ? ' ' + cls : '') + '"/>';
+		const y0 = y + h / 2 + 5 - (lines.length - 1) * 8;
+		lines.forEach(function (l, i) { s += tMid(x + w / 2, y0 + i * 16, l, 'tx'); });
+		return s;
+	}
+
+	// Square "=" comparator of Fig. 8.
+	function cmpBox(x, y, size, cls) {
+		const m = size / 2;
+		return '<rect x="' + x + '" y="' + y + '" width="' + size + '" height="' + size + '" class="opbox' + (cls ? ' ' + cls : '') + '"/>' +
+			'<path d="M' + (x + m - 7) + ',' + (y + m - 3) + ' L' + (x + m + 7) + ',' + (y + m - 3) + ' M' + (x + m - 7) + ',' + (y + m + 3) + ' L' + (x + m + 7) + ',' + (y + m + 3) + '" class="opline"/>';
+	}
+
+	// "?=" tag comparator diamond of Fig. 9. cls: cmp-hit | cmp-miss.
+	function diamond(cx, cy, r, cls) {
+		return '<path d="M' + cx + ',' + (cy - r) + ' L' + (cx + r) + ',' + cy + ' L' + cx + ',' + (cy + r) + ' L' + (cx - r) + ',' + cy + ' Z" class="opbox' + (cls ? ' ' + cls : '') + '"/>' +
+			tMid(cx, cy - 1, '?', 'cmp-t') + tMid(cx, cy + 9, '=', 'cmp-t');
+	}
+
+	BP.svg = { esc, svg, t, tEnd, tMid, wire, dot, tick, figLabel, rect, column, bank, reg, mux, val, legendNote, xor, hashBox, fnBox, cmpBox, diamond };
 
 })(window.BP = window.BP || {});

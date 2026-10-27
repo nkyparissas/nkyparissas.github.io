@@ -230,6 +230,9 @@ a:hover { text-decoration: underline; }
 .knob .range { width: 118px; accent-color: var(--accent); margin: 2px 0 0; }
 .knob .sel { grid-column: 1 / -1; }
 .knob-v { font-weight: 700; color: var(--ink); font-size: 12px; min-width: 3.5ch; }
+.knob-changed .knob-v { color: var(--accent); }
+.knob-changed .sel { border-color: var(--accent); color: var(--accent); }
+.btn-defaults { align-self: center; min-height: 26px; padding: .2rem .55rem; font-size: 11px; }
 .budget { margin-left: auto; align-self: center; font-size: 12px; color: var(--ink-2); font-family: var(--mono); }
 .budget.bad { color: var(--w-rx); font-weight: 700; }
 
@@ -259,8 +262,15 @@ a:hover { text-decoration: underline; }
 
 .split { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 14px; }
 
-.fig { overflow-x: auto; }
-.fig-svg { display: block; width: 100%; height: auto; min-width: 560px; }
+/* Figures sit in a clipping viewport; main.js sizes and shifts .fig for zoom and pan. */
+.fig-view { position: relative; overflow: hidden; }
+.fig-view.pannable { cursor: grab; touch-action: none; user-select: none; }
+.fig-view.pan-x { touch-action: pan-y; }
+.fig-view.dragging { cursor: grabbing; }
+.fig-svg { display: block; width: 100%; height: auto; }
+.zoom { display: inline-flex; gap: 2px; align-self: center; }
+.btn-zoom { min-height: 24px; min-width: 26px; padding: 0 .35rem; font-size: 14px; letter-spacing: 0; line-height: 1; }
+.btn-zoom.zoom-pct { min-width: 48px; font-size: 11px; }
 .fig-empty { color: var(--muted); font-size: 13px; margin: 1.5em 0; text-align: center; }
 .about { font-size: 12.5px; color: var(--ink-2); margin: 8px 0 0; }
 
@@ -307,6 +317,17 @@ a:hover { text-decoration: underline; }
 .fig-svg .muxbox { fill: var(--panel); stroke: var(--ink-2); stroke-width: 1.3; }
 .fig-svg .idxcell { fill: var(--surface); stroke: var(--ink-2); stroke-width: 1.3; }
 .fig-svg .dot-ink { fill: var(--w-ink); } .fig-svg .dot-rd { fill: var(--w-rd); }
+.fig-svg .opbox { fill: var(--panel); stroke: var(--ink-2); stroke-width: 1.3; }
+.fig-svg .opline { stroke: var(--ink-2); stroke-width: 1.3; fill: none; }
+.fig-svg .hashbox { fill: var(--reg); stroke: none; }
+.fig-svg text.on-hash { fill: #fff; font-family: var(--serif); font-size: 13px; }
+.fig-svg text.cmp-t { font-family: var(--serif); font-size: 10px; }
+.fig-svg .opbox.cmp-hit { fill: var(--h1); stroke: var(--k1); stroke-width: 2; }
+.fig-svg .opbox.cmp-miss { fill: var(--panel); stroke: var(--ink-2); stroke-dasharray: 3 2; }
+.fig-svg .opbox.op-on { stroke: var(--w-rd); stroke-width: 2.2; }
+.fig-svg .tbox { stroke-width: 1.3; }
+.fig-svg .segline { stroke: var(--ink-2); stroke-dasharray: 4 3; fill: none; }
+.fig-svg .provider { fill: none; stroke: var(--w-rd); stroke-width: 2.6; }
 
 .fig-svg .w { fill: none; stroke-width: 1.4; stroke-linejoin: round; }
 .fig-svg .w-ink { stroke: var(--w-ink); }
